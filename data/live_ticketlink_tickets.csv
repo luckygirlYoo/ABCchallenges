@@ -1,0 +1,3 @@
+﻿source,category,product_id,title,venue,start_date,end_date,price_info,booking_url,image_url,ai_tags,crawled_at
+티켓링크,가족/어린이,TL001,티켓링크 단독: 2026 캐치! 티니핑 어린이 페스티벌 - 성남,성남아트센터 오페라하우스,2026-08-01,2026-08-15,"35,000원 ~ 60,000원",https://www.ticketlink.co.kr,,family:1.0;baby:1.0;티니핑;티켓링크단독,2026-07-26 16:55:10
+티켓링크,콘서트/페스티벌,TL002,티켓링크 예매: 2026 부천 썸머 파크 락 페스티벌,부천 중앙공원 야외음악당,2026-08-14,2026-08-15,무료입장,https://www.ticketlink.co.kr,,single:1.0;couple:0.9;락페스티벌;티켓링크예매,2026-07-26 16:55:10

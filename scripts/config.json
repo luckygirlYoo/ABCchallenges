@@ -1,0 +1,67 @@
+{
+  "api_keys": {
+    "tour_api_key": "78f617c9eccf3c1adeef525664ac0cd48b8fc2ffb5187b814ab392143edc17fe",
+    "seoul_api_key": "4e44517057696e6b36346c59515854",
+    "tmap_api_key": "YOUR_TMAP_API_KEY",
+    "kakao_api_key": "YOUR_KAKAO_API_KEY",
+    "naver_client_id": "Ify0igsEvJBkNQ52tzHU",
+    "naver_client_secret": "mrpAOaBHpB",
+    "weather_api_key": "78f617c9eccf3c1adeef525664ac0cd48b8fc2ffb5187b814ab392143edc17fe"
+  },
+  "backup_api_keys": {
+    "ncp_naver_client_id": "hg6mjhueqh",
+    "ncp_naver_client_secret": "mXDiNUqwNs8Mv4EYXO84rDn8hKtlgqxW2U4cDskr"
+  },
+  "settings": {
+    "data_dir": "../data",
+    "congestion_update_interval_min": 30,
+    "event_update_interval_hr": 6,
+    "weather_update_interval_hr": 1,
+    "seoul_areas": [
+      "강남역",
+      "홍대입구역",
+      "신촌·이대역",
+      "명동 거리",
+      "성수동",
+      "인사동·익선동",
+      "여의도한강공원",
+      "반포한강공원",
+      "이태원 관광특구",
+      "잠실종합운동장",
+      "서울대입구역",
+      "혜화역",
+      "가로수길",
+      "압구정로데오거리",
+      "동대문디자인플라자(DDP)",
+      "경복궁",
+      "북촌한옥마을",
+      "창덕궁·창경궁",
+      "서울어린이대공원",
+      "서울숲",
+      "뚝섬한강공원",
+      "난지한강공원",
+      "망원한강공원",
+      "N서울타워",
+      "롯데월드",
+      "코엑스",
+      "을지로"
+    ],
+    "gyeonggi_crawl": [
+      "수원화성",
+      "에버랜드",
+      "한국민속촌",
+      "판교테크노밸리",
+      "광명동굴",
+      "의왕철도박물관",
+      "포천아트밸리"
+    ]
+  },
+  "api_guide": {
+    "seoul_api": "https://data.seoul.go.kr 회원가입 → API 키 발급 (무료)",
+    "tour_api": "https://www.data.go.kr '공연전시정보조회서비스' 검색 → 활용신청 (무료)",
+    "weather_api": "https://www.data.go.kr '기상청 단기예보조회서비스' 검색 → 활용신청 (무료)",
+    "naver_api": "https://developers.naver.com 애플리케이션 등록 → Client ID/Secret 발급 (무료)",
+    "tmap_api": "https://openapi.sk.com 회원가입 → 앱키 발급 (무료 기본 제공)",
+    "kakao_api": "https://developers.kakao.com 앱 등록 → REST API 키 발급 (무료)"
+  }
+}

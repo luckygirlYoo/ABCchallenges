@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>주말해 - AI 주말 맞춤형 여가 추천</title>
+  <meta name="description" content="AI가 분석한 이번 주말 맞춤 여가 추천 서비스. 가족, 커플, 싱글별 테마 코스 제공.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app-wrap">
+
+  <!-- ── 상단 헤더 ── -->
+  <header class="nh-header">
+    <div class="nh-header__left">
+      <div class="nh-logo">
+        <span class="nh-logo__mark">🌿</span>
+        <span class="nh-logo__text">주말<b>해</b></span>
+      </div>
+      <span class="nh-header__date" id="header-date"></span>
+    </div>
+    <div class="nh-header__right">
+      <button class="icon-btn" id="search-toggle-btn" aria-label="검색"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <a href="admin.html" class="icon-btn" aria-label="관리자"><i class="fa-solid fa-database"></i></a>
+    </div>
+  </header>
+
+  <!-- ── 검색창 (접힘/펼침) ── -->
+  <div class="search-bar-wrap" id="search-bar-wrap" hidden>
+    <div class="search-bar">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input type="text" id="search-input" placeholder="장소명, 키워드 검색..." autocomplete="off">
+      <button id="search-clear-btn"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+  </div>
+
+  <!-- ── 주 세그먼트 탭 (가족 / 커플 / 싱글) ── -->
+  <nav class="seg-tabs" role="tablist" aria-label="사용자 유형 선택">
+    <button class="seg-tab active" data-seg="family" role="tab" aria-selected="true" id="tab-family">
+      <i class="fa-solid fa-baby-carriage"></i> 아기랑 가족
+    </button>
+    <button class="seg-tab" data-seg="couple" role="tab" aria-selected="false" id="tab-couple">
+      <i class="fa-solid fa-heart"></i> 데이트 커플
+    </button>
+    <button class="seg-tab" data-seg="single" role="tab" aria-selected="false" id="tab-single">
+      <i class="fa-solid fa-headphones"></i> 싱글 매니아
+    </button>
+    <button class="seg-tab" data-seg="food" role="tab" aria-selected="false" id="tab-food">
+      <i class="fa-solid fa-utensils"></i> 맛집
+    </button>
+  </nav>
+
+  <!-- ── 하위 테마 칩 (가로 스크롤) ── -->
+  <div class="theme-chips-wrap">
+    <div class="theme-chips" id="theme-chips">
+      <!-- JS가 동적으로 채움 -->
+    </div>
+  </div>
+
+  <!-- ── 테마 배너 ── -->
+  <div class="theme-banner" id="theme-banner">
+    <div class="theme-banner__text">
+      <p class="theme-banner__sub" id="banner-sub">아이와 함께</p>
+      <h2 class="theme-banner__title" id="banner-title">여름 피서지</h2>
+    </div>
+    <div class="theme-banner__emoji" id="banner-emoji">🏖️</div>
+  </div>
+
+  <!-- ── 장소 리스트 ── -->
+  <main class="place-list-wrap" id="place-list" role="main">
+    <div class="loading-row">
+      <div class="nh-spinner"></div>
+      <span>추천 장소를 불러오는 중...</span>
+    </div>
+  </main>
+
+  <!-- ── 페이지네이션 ── -->
+  <div class="pagination-bar" id="pagination-bar" hidden>
+    <button class="page-btn" id="page-prev"><i class="fa-solid fa-chevron-left"></i></button>
+    <span class="page-info" id="page-info">1 / 1</span>
+    <button class="page-btn" id="page-next"><i class="fa-solid fa-chevron-right"></i></button>
+  </div>
+
+  <!-- ── 하단 네비게이션 ── -->
+  <footer class="bottom-nav">
+    <button class="bnav-item active" id="bnav-home">
+      <i class="fa-solid fa-compass"></i><span>추천</span>
+    </button>
+    <button class="bnav-item" id="bnav-refresh">
+      <i class="fa-solid fa-arrows-rotate"></i><span>갱신</span>
+    </button>
+    <a href="admin.html" class="bnav-item">
+      <i class="fa-solid fa-database"></i><span>관리</span>
+    </a>
+  </footer>
+
+  <!-- ── 장소 상세 Bottom Sheet ── -->
+  <div class="sheet-overlay" id="sheet-overlay"></div>
+  <div class="detail-sheet" id="detail-sheet" role="dialog" aria-modal="true" aria-label="장소 상세 정보">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close-btn" id="sheet-close-btn"><i class="fa-solid fa-xmark"></i></button>
+    <div class="sheet-body" id="sheet-body"><!-- JS fills --></div>
+  </div>
+
+  <!-- ── 갱신 모달 ── -->
+  <div class="nh-modal-overlay" id="refresh-modal-overlay">
+    <div class="nh-modal">
+      <h3><i class="fa-solid fa-arrows-rotate"></i> 실시간 데이터 수집 및 갱신</h3>
+      <ul class="modal-stat-list">
+        <li><span>총 등록 명소/장소</span><strong id="m-places">0개</strong></li>
+        <li><span>실시간 등록 행사</span><strong id="m-events">0개</strong></li>
+        <li><span>데이터 연동 상태</span><strong class="ok">✅ 정상 (실시간)</strong></li>
+      </ul>
+      <div id="collect-status-box" style="font-size:12px;color:var(--nh-text-sec);text-align:center;padding:4px 0;" hidden>
+        <span id="collect-status-text">수집 진행 중...</span>
+      </div>
+      <button class="nh-btn" id="run-collect-btn" style="background:#0066CC;">
+        <i class="fa-solid fa-rotate"></i> 실시간 데이터 수집 실행
+      </button>
+      <button class="nh-btn" id="refresh-modal-close" style="background:var(--nh-bg-sub);color:var(--nh-text-primary);border:1px solid var(--nh-border);">닫기</button>
+    </div>
+  </div>
+
+</div><!-- /app-wrap -->
+<script src="app.js"></script>
+</body>
+</html>
