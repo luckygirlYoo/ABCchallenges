@@ -37,10 +37,14 @@ jobs:
           cp data/*.json _site/data/ 2>/dev/null || true
           # app.js의 data 경로를 ../data/에서 ./data/로 수정
           sed -i "s|'../data/|'./data/|g" _site/app.js
-          sed -i 's|"../data/|"./data/|g' _site/app.js
-          sed -i "s|fetch('../data/|fetch('./data/|g" _site/app.js
+          sed -i "s|\"../data/|\"./data/|g" _site/app.js
+          # admin.js의 data 경로를 ../data/에서 ./data/로 수정
+          sed -i "s|'../data/|'./data/|g" _site/admin.js
+          sed -i "s|\"../data/|\"./data/|g" _site/admin.js
           echo "✅ 빌드 완료!"
+          echo "=== _site/ ==="
           ls -la _site/
+          echo "=== _site/data/ ==="
           ls -la _site/data/
 
       - name: Upload artifact

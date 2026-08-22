@@ -235,22 +235,25 @@ function splitCSVLine(line) {
 // ── 데이터 로드 ──────────────────────────────────────
 async function loadData() {
   try {
-    // 1) total_family_data.csv 로드 (가족 탭 전용)
-    const familyRes = await fetch('../data/total_family_data.csv');
+    // 1) total_family_data.csv 로드 (가족 탭 전용) - 캐시 방지
+    const familyRes = await fetch('../data/total_family_data.csv?t=' + Date.now());
     const familyText = await familyRes.text();
     familyData = parseCSV(familyText);
 
-    // 2) 커플/싱글/맛집 탭용 기존 데이터 로드
-    const [p, e, m] = await Promise.all([
-      fetch('../data/places.csv').then(r => r.text()),
-      fetch('../data/events.csv').then(r => r.text()),
-      fetch('../data/real_time_metrics.csv').then(r => r.text()),
-    ]);
-    placesData  = parseCSV(p);
-    eventsData  = parseCSV(e);
+    // 2) 커플/싱글/맛집 탭용 기존 데이터 로드 (파일 없으면 빈 배열)
+    try {
+      const [p, e, m] = await Promise.all([
+        fetch('../data/places.csv?t=' + Date.now()).then(r => r.ok ? r.text() : ''),
+        fetch('../data/events.csv?t=' + Date.now()).then(r => r.ok ? r.text() : ''),
+        fetch('../data/real_time_metrics.csv?t=' + Date.now()).then(r => r.ok ? r.text() : ''),
+      ]);
+      placesData  = p ? parseCSV(p) : [];
+      eventsData  = e ? parseCSV(e) : [];
+    } catch(e) { console.warn("레거시 데이터 로드 스킵:", e); }
+
     // 3) 주간 날씨 로드
     try {
-      const wRes = await fetch('../data/weather.csv');
+      const wRes = await fetch('../data/weather.csv?t=' + Date.now());
       if (wRes.ok) weatherData = parseCSV(await wRes.text());
     } catch(e) { console.warn("날씨 데이터 로드 실패", e); }
 
