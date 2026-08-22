@@ -22,9 +22,10 @@ import csv
 import re
 from datetime import datetime
 
+import sys, io
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, BASE_DIR)
-import db_manager
+sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
 
 EXCEL_PATH = os.path.join(BASE_DIR, "..", "data", "live_interpark_tickets.xlsx")
 CSV_PATH   = os.path.join(BASE_DIR, "..", "data", "live_interpark_tickets.csv")
@@ -148,72 +149,14 @@ def run_live_ticket_crawler():
         print("크롤링 데이터가 없습니다.")
         return
 
-    # 1. CSV DB 저장
-    db_manager.ensure_data_dir()
+    # CSV DB 저장
+    os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
     with open(CSV_PATH, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=HEADERS)
         w.writeheader()
         w.writerows(all_crawled_items)
     print(f"  [완료] CSV DB 저장 성공: {CSV_PATH}")
-
-    # 2. 엑셀 DB (.xlsx) 저장
-    try:
-        import pandas as pd
-        df = pd.DataFrame(all_crawled_items)
-        df.to_excel(EXCEL_PATH, index=False, engine='openpyxl')
-        print(f"  [완료] 엑셀 DB (.xlsx) 저장 성공: {EXCEL_PATH}")
-    except Exception as e:
-        print(f"  [엑셀 저장 예외] {e}")
-
-    # 3. 추천 서비스 POI DB (places.csv / events.csv) 자동 동기화
-    places = db_manager.load_places()
-    sync_count = 0
-
-    for item in all_crawled_items:
-        v_name = item["venue"]
-        if not v_name or len(v_name) < 2:
-            continue
-
-        # 장소가 DB에 없으면 신규 POI 장소로 자동 생성
-        matched_pl = next((p for p in places if v_name in p["name"] or p["name"] in v_name), None)
-        if not matched_pl:
-            cat_mapping = {
-                "콘서트/페스티벌": "복합문화공간",
-                "뮤지컬":       "복합문화공간",
-                "연극":         "복합문화공간",
-                "클래식/음악회":   "복합문화공간",
-                "전시/행사":     "미술관/전시",
-                "가족/어린이/아동":"어린이/체험"
-            }
-            pid = db_manager.add_or_update_place(
-                name=v_name,
-                category=cat_mapping.get(item["category"], "복합문화공간"),
-                address=f"서울/경기 {v_name}",
-                latitude=37.5665,
-                longitude=126.9780,
-                is_parking=True,
-                is_stroller=True,
-                has_nursing=True,
-                no_kids=False
-            )
-            db_manager.update_real_time_metric(place_id=pid, tmap_rank=999, seoul_crowd_level="LOW")
-            places = db_manager.load_places() # refresh
-        else:
-            pid = matched_pl["place_id"]
-
-        # 이벤트 등록
-        db_manager.add_or_update_event(
-            place_id=pid,
-            title=item["title"],
-            start_date=item["start_date"],
-            end_date=item["end_date"],
-            source_url=item["booking_url"],
-            raw_description=f"[인터파크 예매 랭킹 {item['rank']}위] {item['category']} | 관람료: {item['price_info']} | 예매율: {item['booking_percent']}",
-            ai_tags=item["ai_tags"]
-        )
-        sync_count += 1
-
-    print(f"  [완료] 추천 서비스 DB (places.csv / events.csv) {sync_count}개 크롤링 항목 자동 반영 완료!")
+    print(f"  [완료] 총 {len(all_crawled_items)}건 크롤링 완료")
     print("=" * 65)
 
 if __name__ == "__main__":

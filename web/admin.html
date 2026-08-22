@@ -4,98 +4,174 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>주말해 - 통합 데이터 관리자 센터</title>
-  
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-  
-  <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  
-  <!-- Custom CSS (Shares styling with main app) -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="admin-body">
-  <div class="app-container admin-container">
-    
+  <div class="admin-container">
+
     <!-- Header -->
     <header class="app-header">
       <div class="brand">
-        <h1 class="app-title"><i class="fa-solid fa-database text-indigo"></i> 주말<span>해</span> <span>Admin</span></h1>
-        <p class="app-subtitle">CSV 데이터베이스 관리자 패널</p>
+        <h1 class="app-title">
+          <i class="fa-solid fa-database text-indigo"></i>
+          주말<span>해</span> <span>Admin</span>
+        </h1>
+        <p class="app-subtitle">total_family_data.csv 통합 데이터베이스 관리자 패널</p>
       </div>
-      <a href="index.html" class="action-btn header-back-btn">
+      <a href="index.html" class="header-back-btn">
         <i class="fa-solid fa-house"></i> 메인 화면
       </a>
     </header>
 
-    <!-- Stats Grid -->
-    <section class="admin-stats-grid">
+    <!-- Stats Grid (7개) -->
+    <section class="admin-stats-grid" id="admin-stats-grid">
       <div class="stat-box">
-        <div class="stat-icon"><i class="fa-solid fa-location-dot"></i></div>
+        <div class="stat-icon"><i class="fa-solid fa-database"></i></div>
         <div class="stat-info">
-          <span class="stat-val" id="admin-places-count">0</span>
-          <span class="stat-lbl">총 등록 장소</span>
+          <span class="stat-val" id="admin-total-count">0</span>
+          <span class="stat-lbl">총 데이터 건수</span>
+        </div>
+      </div>
+      <div class="stat-box kids" style="border-left: 3px solid #8B5CF6;">
+        <div class="stat-icon" style="color:#8B5CF6"><i class="fa-solid fa-landmark"></i></div>
+        <div class="stat-info">
+          <span class="stat-val" id="admin-public-kids-count">0</span>
+          <span class="stat-lbl">공공키즈카페</span>
+        </div>
+      </div>
+      <div class="stat-box kids">
+        <div class="stat-icon"><i class="fa-solid fa-house-chimney"></i></div>
+        <div class="stat-info">
+          <span class="stat-val" id="admin-private-kids-count">0</span>
+          <span class="stat-lbl">사설키즈카페</span>
+        </div>
+      </div>
+      <div class="stat-box nature">
+        <div class="stat-icon"><i class="fa-solid fa-leaf"></i></div>
+        <div class="stat-info">
+          <span class="stat-val" id="admin-nature-count">0</span>
+          <span class="stat-lbl">자연친화</span>
+        </div>
+      </div>
+      <div class="stat-box culture">
+        <div class="stat-icon"><i class="fa-solid fa-masks-theater"></i></div>
+        <div class="stat-info">
+          <span class="stat-val" id="admin-culture-count">0</span>
+          <span class="stat-lbl">문화생활</span>
+        </div>
+      </div>
+      <div class="stat-box experience">
+        <div class="stat-icon"><i class="fa-solid fa-bullseye"></i></div>
+        <div class="stat-info">
+          <span class="stat-val" id="admin-experience-count">0</span>
+          <span class="stat-lbl">가족체험</span>
         </div>
       </div>
       <div class="stat-box">
-        <div class="stat-icon"><i class="fa-solid fa-calendar-days"></i></div>
+        <div class="stat-icon" style="color:#34D399"><i class="fa-solid fa-ticket"></i></div>
         <div class="stat-info">
-          <span class="stat-val" id="admin-events-count">0</span>
-          <span class="stat-lbl">연동된 행사</span>
-        </div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-icon"><i class="fa-solid fa-tower-broadcast"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-metrics-count">0</span>
-          <span class="stat-lbl">실시간 지표</span>
+          <span class="stat-val" id="admin-ticket-count">0</span>
+          <span class="stat-lbl">예매 가능</span>
         </div>
       </div>
     </section>
 
-    <!-- Database Table Navigation -->
-    <div class="table-switcher">
-      <button class="switcher-btn active" data-table="places">
-        <i class="fa-solid fa-map-location-dot"></i> Places DB
-      </button>
-      <button class="switcher-btn" data-table="events">
-        <i class="fa-solid fa-tags"></i> Events DB
-      </button>
-      <button class="switcher-btn" data-table="metrics">
-        <i class="fa-solid fa-chart-line"></i> Metrics DB
-      </button>
-    </div>
-
-    <!-- Toolbar: Search and Export -->
-    <div class="table-toolbar" style="display:flex;gap:10px;align-items:center;">
-      <div class="search-box" style="flex:1;">
-        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-        <input type="text" id="admin-search-input" placeholder="선택한 테이블 데이터 필터링...">
+    <!-- ★ 배치 파이프라인 진행상태 제어 패널 ★ -->
+    <section class="batch-card" id="batch-panel">
+      <div class="batch-header">
+        <div>
+          <h2 class="batch-title">
+            <i class="fa-solid fa-cubes-stacked text-indigo"></i>
+            수집 & 보강 배치 파이프라인 관리 (7단계)
+          </h2>
+          <p class="batch-subtitle">수집 실행 시 7개의 배치 파이프라인이 순차적으로 실행되며 상태와 진행률이 실시간 갱신됩니다.</p>
+        </div>
+        <div class="batch-btn-group">
+          <button class="action-btn refresh primary" id="admin-run-collect-btn">
+            <i class="fa-solid fa-play"></i> 수집 실행 (전체 배치 구동)
+          </button>
+          <button class="action-btn refresh" id="admin-weather-btn" style="background:#10B981;">
+            <i class="fa-solid fa-cloud-sun"></i> 날씨 갱신
+          </button>
+        </div>
       </div>
-      <button class="nh-btn" id="admin-run-collect-btn" style="background:#0066CC;font-size:12px;padding:9px 14px;white-space:nowrap;">
-        <i class="fa-solid fa-arrows-rotate"></i> 수집 파이프라인 실행
+
+      <!-- 진행율 프로그레스 바 -->
+      <div class="batch-progress-box">
+        <div class="batch-progress-header">
+          <span class="batch-status-msg" id="batch-status-msg">배치 대기 중</span>
+          <span class="batch-percent-txt" id="batch-percent-txt">0%</span>
+        </div>
+        <div class="batch-progress-track">
+          <div class="batch-progress-fill" id="batch-progress-fill" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- 7단계 배치 카드 목록 그리드 -->
+      <div class="batch-steps-grid" id="batch-steps-grid">
+        <!-- JS로 실시간 렌더링 -->
+      </div>
+    </section>
+
+    <!-- Table Switcher -->
+    <div class="table-switcher">
+      <button class="switcher-btn active" data-table="all" id="switcher-all">
+        <i class="fa-solid fa-table"></i> 전체 DB
+      </button>
+      <button class="switcher-btn" data-table="공공키즈카페" id="switcher-public-kids">
+        <i class="fa-solid fa-landmark"></i> 공공키즈카페
+      </button>
+      <button class="switcher-btn" data-table="사설키즈카페" id="switcher-private-kids">
+        <i class="fa-solid fa-house-chimney"></i> 사설키즈카페
+      </button>
+      <button class="switcher-btn" data-table="자연친화" id="switcher-nature">
+        <i class="fa-solid fa-leaf"></i> 자연친화
+      </button>
+      <button class="switcher-btn" data-table="문화생활" id="switcher-culture">
+        <i class="fa-solid fa-masks-theater"></i> 문화생활
+      </button>
+      <button class="switcher-btn" data-table="가족체험" id="switcher-exp">
+        <i class="fa-solid fa-bullseye"></i> 가족체험
       </button>
     </div>
 
-    <!-- Data Display Area -->
-    <main class="table-responsive-container">
+    <!-- Toolbar -->
+    <div class="table-toolbar">
+      <div class="search-box" style="flex:1">
+        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+        <input type="text" id="admin-search-input" placeholder="장소명, 지역, 설명, 추천이유 검색...">
+      </div>
+      <button class="action-btn export" id="admin-export-btn">
+        <i class="fa-solid fa-file-csv"></i> CSV 내보내기
+      </button>
+    </div>
+
+    <!-- Table -->
+    <div class="table-responsive-container">
       <table class="data-table" id="admin-data-table">
         <thead>
           <tr id="table-headers">
-            <th>데이터를 불러오는 중...</th>
+            <th>로딩 중...</th>
           </tr>
         </thead>
         <tbody id="table-body">
-          <tr>
-            <td>잠시만 기다려주세요.</td>
-          </tr>
+          <tr><td>잠시만 기다려주세요.</td></tr>
         </tbody>
       </table>
-    </main>
+    </div>
 
-    <!-- Modal for viewing full description or JSON details -->
+    <!-- Pagination -->
+    <div class="admin-pagination">
+      <button class="admin-page-btn" id="admin-page-prev"><i class="fa-solid fa-chevron-left"></i></button>
+      <span class="admin-page-info" id="admin-page-info">1 / 1</span>
+      <button class="admin-page-btn" id="admin-page-next"><i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+
+    <!-- Detail Modal -->
     <div class="modal" id="details-modal">
       <div class="modal-content">
         <h3 id="details-modal-title">상세 정보</h3>
@@ -103,9 +179,8 @@
         <button class="close-btn" id="details-modal-close-btn">닫기</button>
       </div>
     </div>
-    
-  </div>
 
+  </div>
   <script src="admin.js"></script>
 </body>
 </html>

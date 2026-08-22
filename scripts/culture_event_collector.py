@@ -14,18 +14,19 @@
 - 서울시 문화행사: data.seoul.go.kr → seoul_api_key 사용
 - 네이버 데이터랩: developers.naver.com → 앱 등록 → naver_client_id, naver_client_secret
 """
+import sys, io
 import requests
 import json
 import os
-import sys
 import csv
 import time
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 
+sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, BASE_DIR)
-import db_manager
 
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -277,11 +278,11 @@ CULTURE_HEADERS = ["title","place","start","end","genre","realm","url","thumbnai
 
 
 def save_culture_events(events: list[dict]):
-    """수집된 공연/전시 이벤트를 CSV로 저장"""
+    """수집된 공연/전시 이벤트를 CSV로 저장 (DB 불필요, 직접 CSV 저장)"""
     if not events:
         print("  저장할 이벤트 데이터 없음")
         return
-    db_manager.ensure_data_dir()
+    os.makedirs(os.path.dirname(CULTURE_EVENTS_CSV), exist_ok=True)
     with open(CULTURE_EVENTS_CSV, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=CULTURE_HEADERS, extrasaction="ignore")
         w.writeheader()
@@ -290,81 +291,29 @@ def save_culture_events(events: list[dict]):
     print(f"  공연/전시 이벤트 {len(events)}건 저장 → {CULTURE_EVENTS_CSV}")
 
 
-def link_events_to_places(events: list[dict]):
-    """공연 장소명으로 우리 DB의 place와 매칭하며, 없으면 새 장소로 추가하여 이벤트 연결"""
-    places = db_manager.load_places()
-    if not events:
-        return 0
-
-    linked = 0
-    for ev in events:
-        event_place = ev.get("place", "").strip()
-        if not event_place or len(event_place) < 2:
-            continue
-
-        matched_place = None
-        for pl in places:
-            if event_place in pl["name"] or pl["name"] in event_place:
-                matched_place = pl
-                break
-
-        # 장소가 없으면 자동 생성
-        if not matched_place:
-            genre = ev.get("genre", "")
-            cat = "미술관/전시" if "전시" in genre or "미술" in genre else "복합문화공간"
-            new_id = db_manager.add_or_update_place(
-                name=event_place,
-                category=cat,
-                address=f"서울 {event_place}",
-                latitude=37.5665,
-                longitude=126.9780,
-                is_parking=True,
-                is_stroller=True,
-                has_nursing=False,
-                no_kids=False
-            )
-            # 신규 metric도 등록
-            db_manager.update_real_time_metric(place_id=new_id, tmap_rank=999, seoul_crowd_level="LOW")
-            target_place_id = new_id
-            places = db_manager.load_places() # refresh
-        else:
-            target_place_id = matched_place["place_id"]
-
-        db_manager.add_or_update_event(
-            place_id=target_place_id,
-            title=ev["title"][:60],
-            start_date=ev.get("start", today.strftime("%Y-%m-%d")),
-            end_date=ev.get("end", (today + timedelta(days=30)).strftime("%Y-%m-%d")),
-            source_url=ev.get("url", ""),
-            raw_description=f"[{ev.get('source','')}] {ev.get('genre','')} | {ev.get('title','')}",
-            ai_tags=f"family:0.8;couple:0.9;single:0.8;{'전시' if '전시' in ev.get('genre','') else '공연'};문화;실시간행사",
-        )
-        linked += 1
-
-    print(f"  총 {linked}개 실제 이벤트 → DB 장소에 자동 연동 완료")
-    return linked
-
-
 if __name__ == "__main__":
     print("=" * 55)
-    print("  공연/전시 이벤트 & 인기도 데이터 수집기")
+    print("  공연/전시 이벤트 수집기 (서울·경기)")
     print("=" * 55)
 
     all_events = []
 
-    print("\n[1] 공공데이터포털 공연전시 API...")
-    all_events += fetch_culture_events_public_api(rows=200)
+    print("\n[1] 공공데이터포털 공연전시 API (서울)...")
+    all_events += fetch_culture_events_public_api(rows=200, area="서울")
 
-    print("\n[2] 서울시 문화행사 API...")
-    all_events += fetch_seoul_culture_events(rows=100)
+    print("\n[2] 공공데이터포털 공연전시 API (경기)...")
+    all_events += fetch_culture_events_public_api(rows=200, area="경기")
 
-    print("\n[3] 국립현대미술관 크롤링...")
+    print("\n[3] 서울시 문화행사 API...")
+    all_events += fetch_seoul_culture_events(rows=200)
+
+    print("\n[4] 국립현대미술관 크롤링...")
     all_events += crawl_mmca()
 
-    print("\n[4] 서울시립미술관 크롤링...")
+    print("\n[5] 서울시립미술관 크롤링...")
     all_events += crawl_sema()
 
-    print("\n[5] 예술의전당 크롤링...")
+    print("\n[6] 예술의전당 크롤링...")
     all_events += crawl_sac()
 
     # 중복 제거 (title 기준)
@@ -378,18 +327,7 @@ if __name__ == "__main__":
 
     print(f"\n총 {len(unique_events)}건 (중복 제거 후) 수집 완료")
 
-    print("\n[6] CSV 저장...")
+    print("\n[7] CSV 저장...")
     save_culture_events(unique_events)
 
-    print("\n[7] DB 장소에 이벤트 연결...")
-    link_events_to_places(unique_events)
-
-    # 네이버 트렌드 (있으면)
-    places = db_manager.load_places()
-    if places and NAVER_ID and not NAVER_ID.startswith("YOUR_"):
-        print("\n[8] 네이버 검색 트렌드 수집...")
-        names = [p["name"] for p in places[:20]]
-        trend_scores = fetch_naver_trend(names)
-        print("  인기도 샘플:", dict(list(trend_scores.items())[:5]))
-    
-    print("\n[완료] culture_events_raw.csv 저장이 완료되었습니다!")
+    print("\n[완료] culture_events_raw.csv 저장 완료!")
