@@ -269,6 +269,12 @@ def main():
     a_len = len(df_all)
     print(f"\n중복 제거: {b_len} → {a_len}건")
 
+    if a_len == 0:
+        # 입력 소스가 전부 비면 total_family_data.csv/json 이 통째로 사라진다.
+        # 덮어쓰지 않고 종료 코드 1 로 실패를 알린다.
+        print(f"[실패] 생성 결과 0건 → 기존 파일 보존 (덮어쓰기 안 함): {OUT_CSV}")
+        sys.exit(1)
+
     os.makedirs(DATA_DIR, exist_ok=True)
     df_all.to_csv(OUT_CSV, index=False, encoding='utf-8-sig')
     print(f"✅ CSV 저장: {OUT_CSV}")

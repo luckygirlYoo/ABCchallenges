@@ -102,6 +102,7 @@ def fetch_clean_naver_places():
     print("=" * 65)
     print(f"  수도권 {len(ALL_REGIONS)}개 시군구 × {len(THEMES)}개 테마 정밀 스캔 중...")
 
+    failed_queries = []
     unique_places = {}
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -145,8 +146,11 @@ def fetch_clean_naver_places():
                                     "congestion_score":    "",
                                     "popularity_score":    ""
                                 }
-            except Exception:
-                pass
+            except Exception as e:
+                # 예전에는 pass 였다. 네이버가 일시 차단되면 로그 한 줄 없이
+                # 해당 쿼리 결과가 사라져, 0건 수집을 정상으로 오인했다.
+                failed_queries.append(query)
+                print(f"    [실패] {query!r}: {type(e).__name__}: {e}")
             time.sleep(0.06)
 
         count += 1
@@ -154,11 +158,22 @@ def fetch_clean_naver_places():
             print(f"  [수집 현황] {count}/{len(ALL_REGIONS)} 시군구 완료 (정제된 장소: {len(unique_places)}건)")
 
     results = list(unique_places.values())
+    if failed_queries:
+        total = len(ALL_REGIONS) * len(THEMES)
+        print(f"  [경고] {len(failed_queries)}/{total}개 쿼리 실패 "
+              f"→ 수집 결과가 불완전합니다: {failed_queries[:5]}")
     print(f"\n✅ 최종 수집 정제 완료된 명소: 총 {len(results)}건!")
     return results
 
 def main():
     results = fetch_clean_naver_places()
+
+    if not results:
+        # 수집 0건이면 기존 파일을 덮어쓰지 않는다. 예전 구현은 무조건 덮어써서
+        # 네이버·대상 사이트가 일시 차단되면 기존 데이터가 조용히 사라졌다.
+        # 배치(run_web.py)가 실패를 인지하도록 종료 코드 1 을 반환한다.
+        print(f"[실패] 수집 0건 → 기존 파일 보존 (덮어쓰기 안 함): {OUTPUT_CSV}")
+        sys.exit(1)
 
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(OUTPUT_CSV, "w", encoding="utf-8-sig", newline="") as f:

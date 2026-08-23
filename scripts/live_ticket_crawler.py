@@ -152,8 +152,9 @@ def run_live_ticket_crawler():
     print("=" * 65)
 
     if not all_crawled_items:
-        print("크롤링 데이터가 없습니다.")
-        return
+        # 덮어쓰기는 하지 않지만, 예전에는 exit 0 이라 배치가 SUCCESS 로 표시됐다.
+        print(f"[실패] 크롤링 0건 → 기존 파일 보존 (덮어쓰기 안 함): {CSV_PATH}")
+        sys.exit(1)
 
     # CSV DB 저장
     os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)

@@ -82,6 +82,7 @@ def crawl_live_public_childcare():
     print("=" * 65)
     print("  서울형키즈카페, 맘스하트카페, 경기도 아이러브맘카페, 육아종합지원센터 라이브 탐색 중...")
 
+    failed_queries = []
     unique_places = {}
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -118,8 +119,11 @@ def crawl_live_public_childcare():
                                 "end_date":            "상시",
                                 "crawled_at":          now_str
                             }
-            except Exception:
-                pass
+            except Exception as e:
+                # 예전에는 pass 였다. 실패가 로그 없이 삼켜져 부분 수집을
+                # 정상으로 오인했다.
+                failed_queries.append(query)
+                print(f"    [실패] {query!r}: {type(e).__name__}: {e}")
             time.sleep(0.1)
 
     # 2. 경기도 31개 시군 아이러브맘카페 & 육아종합지원센터 스캔
@@ -155,16 +159,30 @@ def crawl_live_public_childcare():
                                 "end_date":            "상시",
                                 "crawled_at":          now_str
                             }
-            except Exception:
-                pass
+            except Exception as e:
+                # 예전에는 pass 였다. 실패가 로그 없이 삼켜져 부분 수집을
+                # 정상으로 오인했다.
+                failed_queries.append(query)
+                print(f"    [실패] {query!r}: {type(e).__name__}: {e}")
             time.sleep(0.1)
 
     results = list(unique_places.values())
+    if failed_queries:
+        total = len(SEOUL_DISTRICTS) * 3 + len(GYEONGGI_CITIES) * 3
+        print(f"  [경고] {len(failed_queries)}/{total}개 쿼리 실패 "
+              f"→ 수집 결과가 불완전합니다: {failed_queries[:5]}")
     print(f"\n✅ 라이브 수집 완료된 공공 키즈카페 및 육아센터: 총 {len(results)}건!")
     return results
 
 def main():
     results = crawl_live_public_childcare()
+
+    if not results:
+        # 수집 0건이면 기존 파일을 덮어쓰지 않는다. 예전 구현은 무조건 덮어써서
+        # 네이버·대상 사이트가 일시 차단되면 기존 데이터가 조용히 사라졌다.
+        # 배치(run_web.py)가 실패를 인지하도록 종료 코드 1 을 반환한다.
+        print(f"[실패] 수집 0건 → 기존 파일 보존 (덮어쓰기 안 함): {OUTPUT_CSV}")
+        sys.exit(1)
 
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(OUTPUT_CSV, "w", encoding="utf-8-sig", newline="") as f:
