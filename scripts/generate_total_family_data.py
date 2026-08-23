@@ -4,7 +4,7 @@ total_family_data.csv 1차 통합 및 스키마 정규화 스크립트 v5.0
 주요 기능:
   1. 5개 수집 소스 통합:
      - 공공 육아·키즈카페 (564건) -> '공공키즈카페'
-     - 네이버 장소검색 (9대 테마: 사설키즈카페, 계곡, 수영장, 모래놀이, 공원, 물놀이터, 미술, 농장체험, 박물관) -> '사설키즈카페', '자연친화', '가족체험'
+     - 장소검색 (카카오 로컬 8대 테마: 키즈카페, 계곡, 수영장/물놀이터, 공원, 수목원, 농장, 박물관/과학관, 체험관) -> '사설키즈카페', '자연친화', '가족체험'
      - 서울·경기 공공 문화행사 (200건) -> '문화생활' / '가족체험'
      - 인터파크 티켓 (가족/어린이/아동 전용) -> '문화생활'
      - 티켓링크 티켓 (가족/어린이/아동 전용) -> '문화생활'
@@ -25,7 +25,11 @@ PATH_CHILDCARE = os.path.join(DATA_DIR, "public_childcare_data.csv")
 PATH_CULTURE   = os.path.join(DATA_DIR, "culture_events_raw.csv")
 PATH_INTERPARK = os.path.join(DATA_DIR, "live_interpark_tickets.csv")
 PATH_TICKETLINK= os.path.join(DATA_DIR, "live_ticketlink_tickets.csv")
-PATH_NAVER     = os.path.join(DATA_DIR, "naver_search_results.csv")
+# 장소 수집 결과. v7.0 부터 카카오 로컬 기반 place_search_results.csv 를 쓴다.
+# 새 수집기를 아직 돌리지 않은 환경에서는 구 파일(naver_search_results.csv)로
+# 폴백한다. 폴백이 없으면 이 소스가 0건이 되어 통합 결과가 크게 줄어든다.
+PATH_PLACES    = os.path.join(DATA_DIR, "place_search_results.csv")
+PATH_NAVER_OLD = os.path.join(DATA_DIR, "naver_search_results.csv")
 
 OUT_CSV  = os.path.join(DATA_DIR, "total_family_data.csv")
 OUT_JSON = os.path.join(DATA_DIR, "total_family_data.json")
@@ -202,16 +206,16 @@ def from_tickets(df, source_label):
         })
     return rows
 
-def from_naver_search(df):
+def from_place_search(df):
     rows = []
     for _, r in df.iterrows():
         name    = safe_str(r.get('place_or_event_name', ''))
         if not name: continue
         cat_raw = safe_str(r.get('category', ''))
-        cat     = categorize(cat_raw, name, '네이버 장소검색')
+        cat     = categorize(cat_raw, name, '장소검색')
 
         rows.append({
-            "source_site":         safe_str(r.get('source_site', '네이버 장소검색')),
+            "source_site":         safe_str(r.get('source_site', '장소검색')),
             "category":            cat,
             "place_or_event_name": name,
             "period":              "상시",
@@ -257,11 +261,13 @@ def main():
         all_rows.extend(r_tl)
         print(f"✅ 티켓링크: {len(r_tl)}건")
 
-    if os.path.exists(PATH_NAVER):
-        df_nav = pd.read_csv(PATH_NAVER, encoding='utf-8-sig')
-        r_nav = from_naver_search(df_nav)
+    place_path = PATH_PLACES if os.path.exists(PATH_PLACES) else PATH_NAVER_OLD
+    if os.path.exists(place_path):
+        print(f"   (장소 소스: {os.path.basename(place_path)})")
+        df_nav = pd.read_csv(place_path, encoding='utf-8-sig')
+        r_nav = from_place_search(df_nav)
         all_rows.extend(r_nav)
-        print(f"✅ 네이버 정밀 장소: {len(r_nav)}건")
+        print(f"✅ 정밀 장소: {len(r_nav)}건")
 
     df_all = pd.DataFrame(all_rows)
     b_len = len(df_all)

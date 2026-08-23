@@ -425,7 +425,14 @@ def enrich_data():
         if lat and lng:
             region_fmt = f"{base_addr} | 위도:{lat}, 경도:{lng}"
         else:
-            region_fmt = base_addr
+            # 자체 조회가 실패해도, 수집 단계에서 이미 확보한 좌표가 있으면
+            # 지우지 않는다. place_search_collector 는 카카오 로컬에서 좌표를
+            # 함께 받아오므로, 여기서 덮어쓰면 확보한 좌표를 잃는다.
+            _m = re.search(r'위도:([\d.]+), 경도:([\d.]+)', orig_region)
+            if _m:
+                region_fmt = f"{base_addr} | 위도:{_m.group(1)}, 경도:{_m.group(2)}"
+            else:
+                region_fmt = base_addr
 
         # 3) 실검증 편의시설 ai_tags 구성
         new_ai_tags = build_ai_tags(real_info, category, orig_tags)

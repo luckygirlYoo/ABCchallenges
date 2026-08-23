@@ -55,10 +55,10 @@ BATCH_STEPS_TEMPLATE = [
     },
     {
         "id": "step5",
-        "name": "naver_search_collector.py",
-        "title": "[배치 5] 네이버 시군구×테마 장소 수집",
-        "script": "scripts/naver_search_collector.py",
-        "desc": "수도권 63개 시군구 × 3개 테마 네이버 실시간 장소 크롤링",
+        "name": "place_search_collector.py",
+        "title": "[배치 5] 카카오 로컬 시군구×테마 장소 수집",
+        "script": "scripts/place_search_collector.py",
+        "desc": "수도권 63개 시군구 × 8개 테마 카카오 로컬 장소 수집 (좌표 포함)",
         "status": "PENDING",
         "message": "대기 중"
     },
