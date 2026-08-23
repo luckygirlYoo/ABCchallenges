@@ -55,6 +55,7 @@ let mergedData    = [];  // 기존 places+events 병합 (커플/싱글/맛집용
 let placesData    = [];
 let eventsData    = [];
 let metricsData   = [];
+let congestionData = [];  // 서울시 실시간 도시데이터 인파 혼잡도 관측지점
 let currentSeg    = 'family';
 let currentThemeIdx = 0;
 let currentFamilyCat = '전체'; // 4카테고리 현재 선택
@@ -104,6 +105,29 @@ function parseLatLon(regionStr) {
     lat: latMatch ? parseFloat(latMatch[1]) : null,
     lon: lonMatch ? parseFloat(lonMatch[1]) : null,
   };
+}
+
+// ── 인파 혼잡도: 가장 가까운 관측지점 ────────────────
+// 서울시 실시간 도시데이터는 관측지점 121곳에만 제공된다. 전체 장소에
+// 값을 만들어 붙이지 않고, 반경 안에 관측지점이 있을 때만 '인근 관측지점
+// 기준' 으로 지점명·거리·측정시각을 함께 보여준다.
+const CONGEST_RADIUS_KM = 1.0;
+const CONGEST_CLASS = {
+  '여유': 'LOW', '보통': 'MODERATE', '약간 붐빔': 'CONGESTED', '붐빔': 'VERY_CONGESTED'
+};
+
+function findNearestCongestion(lat, lon) {
+  if (lat === null || lon === null || !congestionData.length) return null;
+  let best = null;
+  for (const a of congestionData) {
+    const alat = parseFloat(a.lat), alon = parseFloat(a.lng);
+    if (!Number.isFinite(alat) || !Number.isFinite(alon)) continue;
+    const d = calcDistance(lat, lon, alat, alon);
+    if (d === null) continue;
+    if (!best || d < best.dist) best = { dist: d, area: a };
+  }
+  if (!best || best.dist > CONGEST_RADIUS_KM) return null;
+  return best;
 }
 
 // ── 위치 정보 요청 ───────────────────────────────────
@@ -251,6 +275,12 @@ async function loadData() {
       eventsData  = e ? parseCSV(e) : [];
       metricsData = m ? parseCSV(m) : [];
     } catch(e) { console.warn("레거시 데이터 로드 스킵:", e); }
+
+    // 2-1. 서울시 실시간 인파 혼잡도 (관측지점 121곳). 없으면 조용히 건너뛴다.
+    try {
+      const cRes = await fetch('../data/seoul_congestion.csv?t=' + Date.now());
+      if (cRes.ok) congestionData = parseCSV(await cRes.text());
+    } catch(e) { console.warn("혼잡도 데이터 로드 스킵:", e); }
 
     // 3) 주간 날씨 로드
     try {
@@ -690,13 +720,10 @@ function openDetailFamily(key) {
   // AI 태그 파싱
   const tagParts = (item.ai_tags || '').split(';').filter(t => !/(family|couple|single|baby|father|mother):/i.test(t) && t.trim());
 
-  // 혼잡도 — 측정값이 없으면 '여유'로 단정하지 않고 UNKNOWN 으로 둔다.
-  // (기존 `|| 1` 은 공란을 1=LOW 로 바꿔서, 측정된 적 없는 장소가
-  //  '여유'로 표시되고 있었다.)
-  const congRaw = parseInt(item.congestion_score);
-  const congestion = Number.isFinite(congRaw) ? congRaw : null;
-  const crowdClass = congestion === null ? 'UNKNOWN'
-    : congestion <= 1 ? 'LOW' : congestion <= 2 ? 'MODERATE' : congestion <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
+  // 혼잡도 — 서울시 실시간 도시데이터 관측지점이 반경 안에 있을 때만 표시한다.
+  // congestion_score 컬럼은 측정 소스가 없어 전 건 공란이므로 쓰지 않는다.
+  const near = findNearestCongestion(lat, lon);
+  const crowdClass = near ? (CONGEST_CLASS[near.area.congest_lvl] || 'UNKNOWN') : 'UNKNOWN';
 
   // 카카오맵 연동
   const searchName = (regionDisplay + ' ' + (item.place_or_event_name || '')).trim();
@@ -723,16 +750,27 @@ function openDetailFamily(key) {
     </div>
 
     <div class="detail-divider"></div>
-    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 실시간 현황</div>
+    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 인파 현황</div>
     ${dist !== null ? `<div class="crowd-row"><span class="crowd-label">내 위치에서</span><span class="crowd-val LOW">📍 ${formatDist(dist)}</span></div>` : ''}
     <div class="crowd-row">
-      <span class="crowd-label">현재 혼잡도</span>
-      <span class="crowd-val ${crowdClass}">${CROWD_LABEL[crowdClass]}</span>
+      <span class="crowd-label">인파 혼잡도</span>
+      <span class="crowd-val ${crowdClass}">${near ? near.area.congest_lvl : '정보 없음'}</span>
     </div>
+    ${near ? `
     <div class="crowd-row">
-      <span class="crowd-label">인기도</span>
-      <span class="crowd-val ${item.popularity_score ? 'LOW' : 'UNKNOWN'}">${item.popularity_score ? `⭐ ${item.popularity_score} / 100` : '정보 없음'}</span>
+      <span class="crowd-label">관측지점</span>
+      <span class="crowd-val LOW" style="font-weight:500">${near.area.area_nm} · ${formatDist(near.dist)}</span>
     </div>
+    ${near.area.ppltn_min ? `<div class="crowd-row"><span class="crowd-label">추정 인원</span><span class="crowd-val LOW" style="font-weight:500">${Number(near.area.ppltn_min).toLocaleString()}~${Number(near.area.ppltn_max).toLocaleString()}명</span></div>` : ''}
+    ${near.area.rate_age_0_9 ? `<div class="crowd-row"><span class="crowd-label">0~9세 비율</span><span class="crowd-val LOW" style="font-weight:500">${near.area.rate_age_0_9}%</span></div>` : ''}
+    <div class="crowd-row">
+      <span class="crowd-label" style="font-size:11px;opacity:.7">서울시 실시간 도시데이터 · ${near.area.measured_at || ''} 측정</span>
+      <span></span>
+    </div>` : `
+    <div class="crowd-row">
+      <span class="crowd-label" style="font-size:11px;opacity:.7">이 지역에는 서울시 인파 관측지점(반경 1km)이 없습니다</span>
+      <span></span>
+    </div>`}
 
     ${tagParts.length ? `
     <div class="detail-divider"></div>

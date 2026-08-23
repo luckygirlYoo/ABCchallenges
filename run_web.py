@@ -92,8 +92,26 @@ BATCH_STEPS_TEMPLATE = [
     },
     {
         "id": "step9",
+        "name": "collect_seoul_congestion.py",
+        "title": "[배치 9] 서울시 실시간 인파 혼잡도 수집",
+        "script": "scripts/collect_seoul_congestion.py",
+        "desc": "관측지점 121곳의 실시간 혼잡도·인구·연령비 수집 (별도 파일)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step10",
+        "name": "collect_amenities.py",
+        "title": "[배치 10] 편의시설 수집 (네이버 플레이스)",
+        "script": "scripts/collect_amenities.py",
+        "desc": "카드가 있는 유형만 조회해 확인된 편의시설만 태그 부여",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step11",
         "name": "enrich_total_family_data.py",
-        "title": "[배치 9] LLM & 편의시설 2차 보강",
+        "title": "[배치 11] LLM & 설명 보강",
         "script": "scripts/enrich_total_family_data.py",
         "desc": "편의시설 태그 및 설명/추천이유 보강",
         "status": "PENDING",
