@@ -73,10 +73,29 @@ BATCH_STEPS_TEMPLATE = [
     },
     {
         "id": "step7",
+        "name": "geocode_event_venues.py",
+        "title": "[배치 7] 공연·행사 공연장 좌표 부여",
+        "script": "scripts/geocode_event_venues.py",
+        "desc": "공연 제목 대신 region 의 공연장명으로 좌표 조회 (반환 장소명 검증)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step8",
+        "name": "dedupe_places.py",
+        "title": "[배치 8] 좌표 기반 장소 중복 제거",
+        "script": "scripts/dedupe_places.py",
+        "desc": "같은 좌표·유사 이름의 장소 병합 (행사는 병합하지 않음)",
+        "args": ["--apply"],
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step9",
         "name": "enrich_total_family_data.py",
-        "title": "[배치 7] LLM & 편의시설 2차 보강",
+        "title": "[배치 9] LLM & 편의시설 2차 보강",
         "script": "scripts/enrich_total_family_data.py",
-        "desc": "주차/수유실/기저귀갈이대 태그, 혼잡도/인기도 및 LLM 추천이유 생성",
+        "desc": "편의시설 태그 및 설명/추천이유 보강",
         "status": "PENDING",
         "message": "대기 중"
     }
@@ -91,7 +110,7 @@ batch_state = {
 }
 
 def execute_batch_pipeline():
-    """배치 스크립트 7개를 순차 실행하고 실시간 상태를 갱신하는 비동기 쓰레드"""
+    """배치 스크립트를 순차 실행하고 실시간 상태를 갱신하는 비동기 쓰레드"""
     global is_collecting, last_collected_at, last_status_msg, batch_state
     is_collecting = True
     batch_state["is_running"] = True
@@ -110,7 +129,10 @@ def execute_batch_pipeline():
         print(f"\n▶ [{i+1}/{total_steps}] {step['title']} 실행 시작...")
 
         try:
-            subprocess.run([sys.executable, script_path], check=True, cwd=BASE_DIR)
+            # 단계별 추가 인자 지원. dedupe_places.py 처럼 기본이 dry-run 인
+            # 스크립트는 args 로 --apply 를 넘겨야 실제로 반영된다.
+            cmd = [sys.executable, script_path] + list(step.get("args", []))
+            subprocess.run(cmd, check=True, cwd=BASE_DIR)
             step["status"] = "SUCCESS"
             step["message"] = "성공"
             print(f"✅ [{i+1}/{total_steps}] {step['title']} 완료!")
