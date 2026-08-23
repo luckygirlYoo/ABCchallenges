@@ -47,7 +47,7 @@ const FAMILY_CAT_CONFIG = {
 };
 
 // 혼잡도 한글
-const CROWD_LABEL = { LOW: '여유', MODERATE: '보통', CONGESTED: '혼잡', VERY_CONGESTED: '매우 혼잡' };
+const CROWD_LABEL = { LOW: '여유', MODERATE: '보통', CONGESTED: '혼잡', VERY_CONGESTED: '매우 혼잡', UNKNOWN: '정보 없음' };
 
 // ── 전역 상태 ────────────────────────────────────────
 let familyData    = [];  // total_family_data.csv 로드 결과
@@ -55,6 +55,7 @@ let mergedData    = [];  // 기존 places+events 병합 (커플/싱글/맛집용
 let placesData    = [];
 let eventsData    = [];
 let metricsData   = [];
+let congestionData = [];  // 서울시 실시간 도시데이터 인파 혼잡도 관측지점
 let currentSeg    = 'family';
 let currentThemeIdx = 0;
 let currentFamilyCat = '전체'; // 4카테고리 현재 선택
@@ -104,6 +105,47 @@ function parseLatLon(regionStr) {
     lat: latMatch ? parseFloat(latMatch[1]) : null,
     lon: lonMatch ? parseFloat(lonMatch[1]) : null,
   };
+}
+
+// ── 인파 혼잡도: 가장 가까운 관측지점 ────────────────
+// 서울시 실시간 도시데이터는 관측지점 121곳에만 제공된다. 전체 장소에
+// 값을 만들어 붙이지 않고, 반경 안에 관측지점이 있을 때만 '인근 관측지점
+// 기준' 으로 지점명·거리·측정시각을 함께 보여준다.
+const CONGEST_RADIUS_KM = 1.0;
+const CONGEST_CLASS = {
+  '여유': 'LOW', '보통': 'MODERATE', '약간 붐빔': 'CONGESTED', '붐빔': 'VERY_CONGESTED'
+};
+// '한산한 곳' 정렬용 순서. 관측지점이 없는 항목은 순위를 매기지 않는다.
+const CONGEST_ORDER = { '여유': 1, '보통': 2, '약간 붐빔': 3, '붐빔': 4 };
+
+function congestOrderOf(item) {
+  const { lat, lon } = parseLatLon(item.region);
+  const near = findNearestCongestion(lat, lon);
+  return near ? (CONGEST_ORDER[near.area.congest_lvl] || null) : null;
+}
+
+// 무료 판정 — 측정된 요금 정보만 근거로 쓴다.
+// 티켓링크는 실제 가격을 주며 '0원' 이 무료를 뜻한다(17건).
+// 공공 공원이라서 무료일 것이라는 식의 추론은 하지 않는다.
+function isFreeItem(item) {
+  const f = (item.fee_info || '').trim();
+  if (!f) return false;
+  if (/무료/.test(f)) return true;
+  return /^0\s*원?$/.test(f.replace(/,/g, ''));
+}
+
+function findNearestCongestion(lat, lon) {
+  if (lat === null || lon === null || !congestionData.length) return null;
+  let best = null;
+  for (const a of congestionData) {
+    const alat = parseFloat(a.lat), alon = parseFloat(a.lng);
+    if (!Number.isFinite(alat) || !Number.isFinite(alon)) continue;
+    const d = calcDistance(lat, lon, alat, alon);
+    if (d === null) continue;
+    if (!best || d < best.dist) best = { dist: d, area: a };
+  }
+  if (!best || best.dist > CONGEST_RADIUS_KM) return null;
+  return best;
 }
 
 // ── 위치 정보 요청 ───────────────────────────────────
@@ -172,12 +214,14 @@ function calcRecommendScore(item) {
     }
   }
 
-  // 5) congestion penalty (0~1)
-  const congestion = parseFloat(item.congestion_score) || 1;
-  const penalty = congestion * 0.2;
+  // 5) congestion penalty — 서울시 실시간 관측값이 있을 때만 적용한다.
+  //    예전에는 congestion_score(전 건 공란) || 1 이라 모든 항목에 같은
+  //    감점이 붙어 아무 역할도 하지 않았다. 측정값이 없으면 감점 없음.
+  const congOrder = congestOrderOf(item);
+  const penalty = congOrder === null ? 0 : congOrder * 0.2;
 
   // 6) free bonus
-  const freeBonus = /무료/.test(item.fee_info || '') ? 0.5 : 0;
+  const freeBonus = isFreeItem(item) ? 0.5 : 0;
 
   // 7) instagram hot bonus
   const instaBonus = /Instagram 핫플/.test(item.source_site || '') ? 0.3 : 0;
@@ -249,7 +293,14 @@ async function loadData() {
       ]);
       placesData  = p ? parseCSV(p) : [];
       eventsData  = e ? parseCSV(e) : [];
+      metricsData = m ? parseCSV(m) : [];
     } catch(e) { console.warn("레거시 데이터 로드 스킵:", e); }
+
+    // 2-1. 서울시 실시간 인파 혼잡도 (관측지점 121곳). 없으면 조용히 건너뛴다.
+    try {
+      const cRes = await fetch('../data/seoul_congestion.csv?t=' + Date.now());
+      if (cRes.ok) congestionData = parseCSV(await cRes.text());
+    } catch(e) { console.warn("혼잡도 데이터 로드 스킵:", e); }
 
     // 3) 주간 날씨 로드
     try {
@@ -259,6 +310,7 @@ async function loadData() {
 
     mergeData();
 
+    updateSortChipAvailability();
     renderThemeChips();
     renderList();
     updateTicker();
@@ -288,8 +340,24 @@ function mergeData() {
         else if (part.trim()) tags.push(part.trim());
       });
     }
-    return { ...pl, ev, scores, tags, crowd: mt.seoul_crowd_level || 'LOW', tmap_rank: parseInt(mt.tmap_rank) || 999 };
+    // 측정값이 없으면 '여유'(LOW)로 단정하지 않고 UNKNOWN 으로 둔다.
+    return { ...pl, ev, scores, tags, crowd: mt.seoul_crowd_level || 'UNKNOWN',
+             crowd_measured_at: mt.updated_at || '', tmap_rank: parseInt(mt.tmap_rank) || 999 };
   });
+}
+
+// ── 정렬 칩 가용성 ───────────────────────────────────
+// 근거 데이터가 없는 정렬 옵션은 숨긴다. 눌러도 빈 목록만 나오는 버튼을
+// 남겨두면 사용자는 '결과가 없다' 가 아니라 '고장났다' 로 받아들인다.
+function updateSortChipAvailability() {
+  const rules = [
+    ['sort-free',  familyData.some(isFreeItem)],
+    ['sort-quiet', congestionData.length > 0],
+  ];
+  for (const [id, ok] of rules) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = ok ? '' : 'none';
+  }
 }
 
 // ── 테마 칩 렌더링 ───────────────────────────────────
@@ -400,6 +468,7 @@ function renderList() {
     // 커플/싱글: 기존 mergedData 사용
     const scoreKey = currentSeg === 'couple' ? 'couple' : 'single';
     list = [...mergedData];
+    // 측정값이 없는 항목(UNKNOWN)은 걸러내지 않는다 — 혼잡하다는 근거가 없다.
     if (currentSeg === 'couple') list = list.filter(p => p.crowd !== 'VERY_CONGESTED');
     const themes = THEMES[currentSeg];
     const theme = themes[currentThemeIdx];
@@ -494,11 +563,20 @@ function applySortFamily(list) {
     case 'distance':
       if (!userLat) return list; // 위치 없으면 그대로
       return list.sort((a, b) => (a._dist ?? 99999) - (b._dist ?? 99999));
-    case 'quiet':
-      return list.sort((a, b) => (parseFloat(a.congestion_score) || 5) - (parseFloat(b.congestion_score) || 5));
+    case 'quiet': {
+      // 서울시 실시간 관측값으로 정렬한다. 예전에는 congestion_score
+      // (전 건 공란) || 5 라서 전 항목이 같은 값이 되어 정렬이 무작동이었다.
+      // 관측지점이 없는 항목은 순서를 만들지 않고 뒤로 보낸다.
+      const withLv = [], without = [];
+      for (const it of list) {
+        const o = congestOrderOf(it);
+        (o === null ? without : withLv).push({ it, o });
+      }
+      withLv.sort((a, b) => a.o - b.o);
+      return withLv.map(x => x.it).concat(without.map(x => x.it));
+    }
     case 'free':
-      return list.filter(item => /무료/.test(item.fee_info || ''))
-        .concat(list.filter(item => !/무료/.test(item.fee_info || '')));
+      return list.filter(isFreeItem).concat(list.filter(it => !isFreeItem(it)));
     default:
       return list;
   }
@@ -518,7 +596,7 @@ function renderFamilyCard(item, idx) {
   const badges = [];
   const familyScore = parseFamilyScore(item.ai_tags);
   if (familyScore >= 0.9) badges.push('<span class="badge-pill green">👨‍👩‍👧 가족 최적</span>');
-  if (/무료/.test(item.fee_info || '')) badges.push('<span class="badge-pill free">💚 무료</span>');
+  if (isFreeItem(item)) badges.push('<span class="badge-pill free">💚 무료</span>');
   if (/Instagram/.test(item.source_site || '')) badges.push('<span class="badge-pill insta">📸 인스타 핫플</span>');
 
   // 마감 임박 배지
@@ -540,9 +618,11 @@ function renderFamilyCard(item, idx) {
     badges.push(`<span class="badge-pill dist">${distLabel}</span>`);
   }
 
-  // 혼잡도 점
-  const crowdScore = parseInt(item.congestion_score) || 1;
-  const crowdClass = crowdScore <= 1 ? 'LOW' : crowdScore <= 2 ? 'MODERATE' : crowdScore <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
+  // 혼잡도 점 — 측정값 없으면 UNKNOWN
+  const crowdRaw = parseInt(item.congestion_score);
+  const crowdScore = Number.isFinite(crowdRaw) ? crowdRaw : null;
+  const crowdClass = crowdScore === null ? 'UNKNOWN'
+    : crowdScore <= 1 ? 'LOW' : crowdScore <= 2 ? 'MODERATE' : crowdScore <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
 
   // 지역명 (region에서 위도/경도 제거)
   const regionDisplay = (item.region || '').split('|')[0].trim();
@@ -684,9 +764,10 @@ function openDetailFamily(key) {
   // AI 태그 파싱
   const tagParts = (item.ai_tags || '').split(';').filter(t => !/(family|couple|single|baby|father|mother):/i.test(t) && t.trim());
 
-  // 혼잡도
-  const congestion = parseInt(item.congestion_score) || 1;
-  const crowdClass = congestion <= 1 ? 'LOW' : congestion <= 2 ? 'MODERATE' : congestion <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
+  // 혼잡도 — 서울시 실시간 도시데이터 관측지점이 반경 안에 있을 때만 표시한다.
+  // congestion_score 컬럼은 측정 소스가 없어 전 건 공란이므로 쓰지 않는다.
+  const near = findNearestCongestion(lat, lon);
+  const crowdClass = near ? (CONGEST_CLASS[near.area.congest_lvl] || 'UNKNOWN') : 'UNKNOWN';
 
   // 카카오맵 연동
   const searchName = (regionDisplay + ' ' + (item.place_or_event_name || '')).trim();
@@ -697,7 +778,7 @@ function openDetailFamily(key) {
     <div class="detail-name">${catEmoji} ${item.place_or_event_name || '-'}</div>
     <div class="detail-addr"><i class="fa-solid fa-location-dot" style="color:var(--nh-green)"></i>${regionDisplay}</div>
     <div class="detail-badges">
-      ${/무료/.test(item.fee_info || '') ? '<span class="badge-pill free">💚 무료</span>' : ''}
+      ${isFreeItem(item) ? '<span class="badge-pill free">💚 무료</span>' : ''}
       ${dist !== null ? `<span class="badge-pill dist">📍 ${formatDist(dist)}</span>` : ''}
       ${/인스타|Instagram/.test(item.source_site || '') ? '<span class="badge-pill insta">📸 인스타 핫플</span>' : ''}
       ${hasTicket ? '<span class="badge-pill ticket">🎫 예매 가능</span>' : ''}
@@ -713,16 +794,27 @@ function openDetailFamily(key) {
     </div>
 
     <div class="detail-divider"></div>
-    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 실시간 현황</div>
+    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 인파 현황</div>
     ${dist !== null ? `<div class="crowd-row"><span class="crowd-label">내 위치에서</span><span class="crowd-val LOW">📍 ${formatDist(dist)}</span></div>` : ''}
     <div class="crowd-row">
-      <span class="crowd-label">현재 혼잡도</span>
-      <span class="crowd-val ${crowdClass}">${CROWD_LABEL[crowdClass]}</span>
+      <span class="crowd-label">인파 혼잡도</span>
+      <span class="crowd-val ${crowdClass}">${near ? near.area.congest_lvl : '정보 없음'}</span>
     </div>
+    ${near ? `
     <div class="crowd-row">
-      <span class="crowd-label">인기도</span>
-      <span class="crowd-val LOW">⭐ ${item.popularity_score || '-'} / 100</span>
+      <span class="crowd-label">관측지점</span>
+      <span class="crowd-val LOW" style="font-weight:500">${near.area.area_nm} · ${formatDist(near.dist)}</span>
     </div>
+    ${near.area.ppltn_min ? `<div class="crowd-row"><span class="crowd-label">추정 인원</span><span class="crowd-val LOW" style="font-weight:500">${Number(near.area.ppltn_min).toLocaleString()}~${Number(near.area.ppltn_max).toLocaleString()}명</span></div>` : ''}
+    ${near.area.rate_age_0_9 ? `<div class="crowd-row"><span class="crowd-label">0~9세 비율</span><span class="crowd-val LOW" style="font-weight:500">${near.area.rate_age_0_9}%</span></div>` : ''}
+    <div class="crowd-row">
+      <span class="crowd-label" style="font-size:11px;opacity:.7">서울시 실시간 도시데이터 · ${near.area.measured_at || ''} 측정</span>
+      <span></span>
+    </div>` : `
+    <div class="crowd-row">
+      <span class="crowd-label" style="font-size:11px;opacity:.7">이 지역에는 서울시 인파 관측지점(반경 1km)이 없습니다</span>
+      <span></span>
+    </div>`}
 
     ${tagParts.length ? `
     <div class="detail-divider"></div>
@@ -771,7 +863,7 @@ function openDetail(placeId) {
   if (!pl) return;
   const ev = pl.ev || {};
   const mapUrl = `https://map.kakao.com/link/search/${encodeURIComponent(pl.name)}`;
-  const crowdClass = pl.crowd || 'LOW';
+  const crowdClass = pl.crowd || 'UNKNOWN';
   const isFood = pl.category?.startsWith('맛집/');
   const emoji = CAT_EMOJI[pl.category] || (isFood ? '🍽️' : '📍');
   const dist = calcDistance(userLat, userLon, parseFloat(pl.latitude), parseFloat(pl.longitude));
@@ -798,10 +890,10 @@ function openDetail(placeId) {
     <div class="detail-badges">${buildPillsLegacy({ ...pl, _dist: dist }, isFood)}</div>
 
     <div class="detail-divider"></div>
-    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 실시간 현황</div>
+    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 현황</div>
     ${dist !== null ? `<div class="crowd-row"><span class="crowd-label">내 위치에서</span><span class="crowd-val LOW">📍 ${formatDist(dist)}</span></div>` : ''}
     <div class="crowd-row">
-      <span class="crowd-label">현재 인파 혼잡도</span>
+      <span class="crowd-label">인파 혼잡도${pl.crowd_measured_at ? ` <small style="opacity:.6">(${pl.crowd_measured_at.slice(0,10)} 측정)</small>` : ''}</span>
       <span class="crowd-val ${crowdClass}">${CROWD_LABEL[crowdClass] || crowdClass}</span>
     </div>
 

@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+.vscode/
+
+# 비밀정보 — 절대 커밋하지 말 것
+scripts/config.json
+.env
+*.env
+
+# 임시 파일
+*.tmp

@@ -20,7 +20,10 @@ import os
 import sys
 import csv
 import re
-from datetime import datetime
+from datetime import datetime, timedelta   # timedelta: 115행 end_date 폴백에서 사용
+                                           # (기존에 미import 상태여서 playEndDate 가
+                                           #  빈 응답이 오는 순간 NameError 로 해당
+                                           #  카테고리 50건이 통째로 유실됐다)
 
 import sys, io
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -89,7 +92,11 @@ def fetch_interpark_live_ranking(ranking_type: str, category_label: str) -> list
             venue      = item.get("placeName", "").strip()
             start_d    = clean_date_str(item.get("playStartDate", ""))
             end_d      = clean_date_str(item.get("playEndDate", ""))
-            price_info = item.get("salesPriceGrade", "") or "상세 페이지 참조"
+            # salesPriceGrade 는 가격이 아니라 **가격 등급 수**(예: 11)다.
+            # 이 값을 price_info 로 내보내서 웹앱에 "이용 요금: 2" 처럼
+            # 표시되고 있었다. 인터파크 랭킹 API 에는 실제 가격 필드가
+            # 없으므로(전체 27개 필드 확인) 지어내지 않고 안내로 대체한다.
+            price_info = "상세 페이지 참조"
             b_percent  = f"{item.get('bookingPercent', 0)}%"
             rank_num   = item.get("rank", 99)
             rel_url    = item.get("url", "")
@@ -99,7 +106,10 @@ def fetch_interpark_live_ranking(ranking_type: str, category_label: str) -> list
             full_url = f"https://tickets.interpark.com{rel_url}" if rel_url.startswith("/") else (rel_url or f"https://tickets.interpark.com/goods/{goods_code}")
 
             # 세그먼트 매칭 AI 태그 자동 생성
-            family_score = 0.9 if ranking_type in ["FAMILY"] else (0.7 if ranking_type in ["EXHIBIT", "MUSICAL"] else 0.5)
+            # RANKING_CATEGORIES 의 키는 "KIDS" 인데 여기서는 "FAMILY" 를 검사해
+            # 가족/어린이 카테고리 50건이 전부 family:0.5 로 떨어지고 있었다.
+            # (2026-08-23 실측: KIDS 50건 중 family:0.9 부여 0건)
+            family_score = 0.9 if ranking_type in ["KIDS"] else (0.7 if ranking_type in ["EXHIBIT", "MUSICAL"] else 0.5)
             couple_score = 0.95 if ranking_type in ["CONCERT", "MUSICAL", "CLASSIC", "EXHIBIT"] else 0.6
             single_score = 0.9 if ranking_type in ["CONCERT", "DRAMA", "CLASSIC"] else 0.6
 
@@ -146,8 +156,9 @@ def run_live_ticket_crawler():
     print("=" * 65)
 
     if not all_crawled_items:
-        print("크롤링 데이터가 없습니다.")
-        return
+        # 덮어쓰기는 하지 않지만, 예전에는 exit 0 이라 배치가 SUCCESS 로 표시됐다.
+        print(f"[실패] 크롤링 0건 → 기존 파일 보존 (덮어쓰기 안 함): {CSV_PATH}")
+        sys.exit(1)
 
     # CSV DB 저장
     os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)

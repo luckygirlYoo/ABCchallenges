@@ -1,0 +1,30 @@
+{
+    "_README": "이 파일은 형식 견본입니다. scripts/config.json 으로 복사한 뒤 각 항목에 발급받은 키를 채우세요. config.json 은 .gitignore 대상이며 절대 커밋하지 마십시오.",
+    "api_keys": {
+        "tour_api_key": "YOUR_TOUR_API_KEY",
+        "seoul_api_key": "YOUR_SEOUL_API_KEY",
+        "tmap_api_key": "YOUR_TMAP_API_KEY",
+        "kakao_api_key": "YOUR_KAKAO_API_KEY",
+        "naver_client_id": "YOUR_NAVER_CLIENT_ID",
+        "naver_client_secret": "YOUR_NAVER_CLIENT_SECRET",
+        "weather_api_key": "YOUR_WEATHER_API_KEY"
+    },
+    "backup_api_keys": {
+        "ncp_naver_client_id": "YOUR_NCP_NAVER_CLIENT_ID",
+        "ncp_naver_client_secret": "YOUR_NCP_NAVER_CLIENT_SECRET"
+    },
+    "settings": {
+        "data_dir": "../data",
+        "congestion_update_interval_min": 30,
+        "event_update_interval_hr": 6,
+        "weather_update_interval_hr": 1
+    },
+    "api_guide": {
+        "seoul_api": "https://data.seoul.go.kr 회원가입 → API 키 발급 (무료)",
+        "tour_api": "https://www.data.go.kr '공연전시정보조회서비스' 검색 → 활용신청 (무료)",
+        "weather_api": "https://www.data.go.kr '기상청 단기예보조회서비스' 검색 → 활용신청 (무료)",
+        "naver_api": "https://developers.naver.com 애플리케이션 등록 → Client ID/Secret 발급 (무료)",
+        "tmap_api": "https://openapi.sk.com 회원가입 → 앱키 발급 (무료 기본 제공)",
+        "kakao_api": "https://developers.kakao.com 앱 등록 → REST API 키 발급 (무료)"
+    }
+}
