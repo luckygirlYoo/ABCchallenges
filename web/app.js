@@ -249,6 +249,7 @@ async function loadData() {
       ]);
       placesData  = p ? parseCSV(p) : [];
       eventsData  = e ? parseCSV(e) : [];
+      metricsData = m ? parseCSV(m) : [];
     } catch(e) { console.warn("레거시 데이터 로드 스킵:", e); }
 
     // 3) 주간 날씨 로드
@@ -288,7 +289,9 @@ function mergeData() {
         else if (part.trim()) tags.push(part.trim());
       });
     }
-    return { ...pl, ev, scores, tags, crowd: mt.seoul_crowd_level || 'LOW', tmap_rank: parseInt(mt.tmap_rank) || 999 };
+    // 측정값이 없으면 '여유'(LOW)로 단정하지 않고 UNKNOWN 으로 둔다.
+    return { ...pl, ev, scores, tags, crowd: mt.seoul_crowd_level || 'UNKNOWN',
+             crowd_measured_at: mt.updated_at || '', tmap_rank: parseInt(mt.tmap_rank) || 999 };
   });
 }
 
@@ -400,6 +403,7 @@ function renderList() {
     // 커플/싱글: 기존 mergedData 사용
     const scoreKey = currentSeg === 'couple' ? 'couple' : 'single';
     list = [...mergedData];
+    // 측정값이 없는 항목(UNKNOWN)은 걸러내지 않는다 — 혼잡하다는 근거가 없다.
     if (currentSeg === 'couple') list = list.filter(p => p.crowd !== 'VERY_CONGESTED');
     const themes = THEMES[currentSeg];
     const theme = themes[currentThemeIdx];
@@ -777,7 +781,7 @@ function openDetail(placeId) {
   if (!pl) return;
   const ev = pl.ev || {};
   const mapUrl = `https://map.kakao.com/link/search/${encodeURIComponent(pl.name)}`;
-  const crowdClass = pl.crowd || 'LOW';
+  const crowdClass = pl.crowd || 'UNKNOWN';
   const isFood = pl.category?.startsWith('맛집/');
   const emoji = CAT_EMOJI[pl.category] || (isFood ? '🍽️' : '📍');
   const dist = calcDistance(userLat, userLon, parseFloat(pl.latitude), parseFloat(pl.longitude));
@@ -804,10 +808,10 @@ function openDetail(placeId) {
     <div class="detail-badges">${buildPillsLegacy({ ...pl, _dist: dist }, isFood)}</div>
 
     <div class="detail-divider"></div>
-    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 실시간 현황</div>
+    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 현황</div>
     ${dist !== null ? `<div class="crowd-row"><span class="crowd-label">내 위치에서</span><span class="crowd-val LOW">📍 ${formatDist(dist)}</span></div>` : ''}
     <div class="crowd-row">
-      <span class="crowd-label">현재 인파 혼잡도</span>
+      <span class="crowd-label">인파 혼잡도${pl.crowd_measured_at ? ` <small style="opacity:.6">(${pl.crowd_measured_at.slice(0,10)} 측정)</small>` : ''}</span>
       <span class="crowd-val ${crowdClass}">${CROWD_LABEL[crowdClass] || crowdClass}</span>
     </div>
 
