@@ -20,7 +20,10 @@ import os
 import sys
 import csv
 import re
-from datetime import datetime
+from datetime import datetime, timedelta   # timedelta: 115행 end_date 폴백에서 사용
+                                           # (기존에 미import 상태여서 playEndDate 가
+                                           #  빈 응답이 오는 순간 NameError 로 해당
+                                           #  카테고리 50건이 통째로 유실됐다)
 
 import sys, io
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -99,7 +102,10 @@ def fetch_interpark_live_ranking(ranking_type: str, category_label: str) -> list
             full_url = f"https://tickets.interpark.com{rel_url}" if rel_url.startswith("/") else (rel_url or f"https://tickets.interpark.com/goods/{goods_code}")
 
             # 세그먼트 매칭 AI 태그 자동 생성
-            family_score = 0.9 if ranking_type in ["FAMILY"] else (0.7 if ranking_type in ["EXHIBIT", "MUSICAL"] else 0.5)
+            # RANKING_CATEGORIES 의 키는 "KIDS" 인데 여기서는 "FAMILY" 를 검사해
+            # 가족/어린이 카테고리 50건이 전부 family:0.5 로 떨어지고 있었다.
+            # (2026-08-23 실측: KIDS 50건 중 family:0.9 부여 0건)
+            family_score = 0.9 if ranking_type in ["KIDS"] else (0.7 if ranking_type in ["EXHIBIT", "MUSICAL"] else 0.5)
             couple_score = 0.95 if ranking_type in ["CONCERT", "MUSICAL", "CLASSIC", "EXHIBIT"] else 0.6
             single_score = 0.9 if ranking_type in ["CONCERT", "DRAMA", "CLASSIC"] else 0.6
 

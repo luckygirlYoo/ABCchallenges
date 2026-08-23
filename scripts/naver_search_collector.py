@@ -138,8 +138,12 @@ def fetch_clean_naver_places():
                                     "ai_tags":             f"family:1.0;baby:1.0;parking:1.0;nursing_room:1.0;{reg.split()[1]};{theme_str}",
                                     "crawled_at":          now_str,
                                     "theme_tags":          t_tag,
-                                    "congestion_score":    2,
-                                    "popularity_score":    85
+                                    # 혼잡도·인기도를 측정할 데이터 소스가 없다.
+                                    # 기존에는 전 건에 2 / 85 를 하드코딩해서
+                                    # 실측값처럼 보이게 했다(1,643건 전부 동일값).
+                                    # 값을 지어내지 않고 공란으로 둔다.
+                                    "congestion_score":    "",
+                                    "popularity_score":    ""
                                 }
             except Exception:
                 pass

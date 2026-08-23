@@ -419,6 +419,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--nh-bg-sub
 .crowd-dot.MODERATE      { background: var(--nh-orange); }
 .crowd-dot.CONGESTED     { background: var(--nh-red); }
 .crowd-dot.VERY_CONGESTED{ background: #6A1A1A; }
+.crowd-dot.UNKNOWN       { background: #C4C4C4; }   /* 측정값 없음 */
 
 /* ── 로딩 / 빈 화면 ── */
 .loading-row { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 20px; color: var(--nh-text-sec); }
@@ -549,6 +550,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--nh-bg-sub
 .crowd-val.MODERATE      { color: var(--nh-orange); }
 .crowd-val.CONGESTED     { color: var(--nh-red); }
 .crowd-val.VERY_CONGESTED{ color: #6A1A1A; }
+.crowd-val.UNKNOWN       { color: #9A9A9A; }        /* 측정값 없음 */
 
 .detail-event-box { background: var(--nh-bg-sub); border-radius: var(--radius-md); padding: 12px 14px; }
 .detail-event-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }

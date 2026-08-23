@@ -117,8 +117,10 @@ def from_childcare(df):
             "ai_tags":             ensure_family_tag(safe_str(r.get('ai_tags', ''))),
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          theme_tags(cat, name),
-            "congestion_score":    random.randint(1, 3),
-            "popularity_score":    random.randint(75, 95),
+            # 난수 생성 제거. 측정 소스가 없으면 원본 값을 그대로 넘기고,
+            # 원본도 없으면 공란으로 둔다. (기존: randint(1,3) / randint(75,95))
+            "congestion_score":    safe_str(r.get('congestion_score', '')),
+            "popularity_score":    safe_str(r.get('popularity_score', '')),
         })
     return rows
 
@@ -138,7 +140,9 @@ def from_culture_events(df):
         ai_tag = ensure_family_tag(safe_str(r.get('ai_tags', '')))
         
         rows.append({
-            "source_site":         safe_str(r.get('source_site', url or '문화행사')),
+            # culture_events_raw.csv 의 출처 컬럼명은 'source' 다.
+            # 'source_site' 로만 찾으면 폴백이 걸려 긴 URL이 출처로 표시된다.
+            "source_site":         safe_str(r.get('source_site', '')) or safe_str(r.get('source', '')) or '문화행사',
             "category":            cat,
             "place_or_event_name": name,
             "period":              period,
@@ -150,8 +154,10 @@ def from_culture_events(df):
             "ai_tags":             ai_tag,
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          theme_tags(cat, name),
-            "congestion_score":    random.randint(2, 4),
-            "popularity_score":    random.randint(60, 88),
+            # 난수 생성 제거. (기존: randint(2,4) / randint(60,88))
+            # culture_events_raw.csv 의 popularity 는 네이버 데이터랩 실측값이다.
+            "congestion_score":    "",
+            "popularity_score":    safe_str(r.get('popularity', '')),
         })
     return rows
 
@@ -174,8 +180,10 @@ def from_tickets(df, source_label):
         rank  = safe_str(r.get('rank', ''))
         target_age = safe_str(r.get('target_age', ''), "전체 (가족/어린이 동반)")
         
+        # rank 기반 계산은 인터파크가 제공하는 실제 순위이므로 유지한다.
+        # 다만 rank 를 못 읽었을 때 난수로 메우던 폴백은 제거한다.
         try:   pop = max(50, 100 - int(rank) * 2)
-        except: pop = random.randint(65, 92)
+        except: pop = None
         rows.append({
             "source_site":         source_label,
             "category":            cat,
@@ -189,8 +197,8 @@ def from_tickets(df, source_label):
             "ai_tags":             ensure_family_tag(ai_tag),
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          theme_tags(cat, name),
-            "congestion_score":    random.randint(3, 5),
-            "popularity_score":    min(100, pop),
+            "congestion_score":    "",
+            "popularity_score":    min(100, pop) if pop is not None else "",
         })
     return rows
 
@@ -215,8 +223,9 @@ def from_naver_search(df):
             "ai_tags":             ensure_family_tag(safe_str(r.get('ai_tags', ''))),
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          safe_str(r.get('theme_tags', theme_tags(cat, name))),
-            "congestion_score":    int(r.get('congestion_score', 2)),
-            "popularity_score":    int(r.get('popularity_score', 85)),
+            # 기존에는 값이 없으면 2 / 85 를 기본값으로 채워 넣었다.
+            "congestion_score":    safe_str(r.get('congestion_score', '')),
+            "popularity_score":    safe_str(r.get('popularity_score', '')),
         })
     return rows
 

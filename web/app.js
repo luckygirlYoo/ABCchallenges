@@ -47,7 +47,7 @@ const FAMILY_CAT_CONFIG = {
 };
 
 // 혼잡도 한글
-const CROWD_LABEL = { LOW: '여유', MODERATE: '보통', CONGESTED: '혼잡', VERY_CONGESTED: '매우 혼잡' };
+const CROWD_LABEL = { LOW: '여유', MODERATE: '보통', CONGESTED: '혼잡', VERY_CONGESTED: '매우 혼잡', UNKNOWN: '정보 없음' };
 
 // ── 전역 상태 ────────────────────────────────────────
 let familyData    = [];  // total_family_data.csv 로드 결과
@@ -540,9 +540,11 @@ function renderFamilyCard(item, idx) {
     badges.push(`<span class="badge-pill dist">${distLabel}</span>`);
   }
 
-  // 혼잡도 점
-  const crowdScore = parseInt(item.congestion_score) || 1;
-  const crowdClass = crowdScore <= 1 ? 'LOW' : crowdScore <= 2 ? 'MODERATE' : crowdScore <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
+  // 혼잡도 점 — 측정값 없으면 UNKNOWN
+  const crowdRaw = parseInt(item.congestion_score);
+  const crowdScore = Number.isFinite(crowdRaw) ? crowdRaw : null;
+  const crowdClass = crowdScore === null ? 'UNKNOWN'
+    : crowdScore <= 1 ? 'LOW' : crowdScore <= 2 ? 'MODERATE' : crowdScore <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
 
   // 지역명 (region에서 위도/경도 제거)
   const regionDisplay = (item.region || '').split('|')[0].trim();
@@ -684,9 +686,13 @@ function openDetailFamily(key) {
   // AI 태그 파싱
   const tagParts = (item.ai_tags || '').split(';').filter(t => !/(family|couple|single|baby|father|mother):/i.test(t) && t.trim());
 
-  // 혼잡도
-  const congestion = parseInt(item.congestion_score) || 1;
-  const crowdClass = congestion <= 1 ? 'LOW' : congestion <= 2 ? 'MODERATE' : congestion <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
+  // 혼잡도 — 측정값이 없으면 '여유'로 단정하지 않고 UNKNOWN 으로 둔다.
+  // (기존 `|| 1` 은 공란을 1=LOW 로 바꿔서, 측정된 적 없는 장소가
+  //  '여유'로 표시되고 있었다.)
+  const congRaw = parseInt(item.congestion_score);
+  const congestion = Number.isFinite(congRaw) ? congRaw : null;
+  const crowdClass = congestion === null ? 'UNKNOWN'
+    : congestion <= 1 ? 'LOW' : congestion <= 2 ? 'MODERATE' : congestion <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
 
   // 카카오맵 연동
   const searchName = (regionDisplay + ' ' + (item.place_or_event_name || '')).trim();
@@ -721,7 +727,7 @@ function openDetailFamily(key) {
     </div>
     <div class="crowd-row">
       <span class="crowd-label">인기도</span>
-      <span class="crowd-val LOW">⭐ ${item.popularity_score || '-'} / 100</span>
+      <span class="crowd-val ${item.popularity_score ? 'LOW' : 'UNKNOWN'}">${item.popularity_score ? `⭐ ${item.popularity_score} / 100` : '정보 없음'}</span>
     </div>
 
     ${tagParts.length ? `

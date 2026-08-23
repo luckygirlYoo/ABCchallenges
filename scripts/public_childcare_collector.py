@@ -109,8 +109,10 @@ def crawl_live_public_childcare():
                                 "description":         f"서울시 {dist}에서 공식 운영하는 공공형 키즈카페 및 육아지원 공간 [{cleaned}]입니다.",
                                 "booking_url":         "https://icare.seoul.go.kr",
                                 "theme_tags":          "toddler:1.0;indoor:1.0;public:1.0",
-                                "congestion_score":    2,
-                                "popularity_score":    92,
+                                # 측정 소스 없음. 기존에는 2 / 92 를 하드코딩해
+                                # 실측값처럼 보이게 했다. 지어내지 않고 공란 처리.
+                                "congestion_score":    "",
+                                "popularity_score":    "",
                                 "ai_tags":             f"family:1.0;baby:1.0;father:1.0;공공키즈카페;서울형키즈카페;{dist}",
                                 "start_date":          "상시",
                                 "end_date":            "상시",
@@ -144,8 +146,10 @@ def crawl_live_public_childcare():
                                 "description":         f"경기도 {city} 지자체에서 직접 운영하는 공공 육아카페 및 체험센터 [{cleaned}]입니다.",
                                 "booking_url":         "https://gyeonggi.childcare.go.kr",
                                 "theme_tags":          "toddler:1.0;indoor:1.0;public:1.0",
-                                "congestion_score":    2,
-                                "popularity_score":    90,
+                                # 측정 소스 없음. 기존에는 2 / 90 를 하드코딩해
+                                # 실측값처럼 보이게 했다. 지어내지 않고 공란 처리.
+                                "congestion_score":    "",
+                                "popularity_score":    "",
                                 "ai_tags":             f"family:1.0;baby:1.0;father:1.0;공공키즈카페;아이러브맘카페;{city}",
                                 "start_date":          "상시",
                                 "end_date":            "상시",
