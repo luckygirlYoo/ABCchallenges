@@ -92,7 +92,11 @@ def fetch_interpark_live_ranking(ranking_type: str, category_label: str) -> list
             venue      = item.get("placeName", "").strip()
             start_d    = clean_date_str(item.get("playStartDate", ""))
             end_d      = clean_date_str(item.get("playEndDate", ""))
-            price_info = item.get("salesPriceGrade", "") or "상세 페이지 참조"
+            # salesPriceGrade 는 가격이 아니라 **가격 등급 수**(예: 11)다.
+            # 이 값을 price_info 로 내보내서 웹앱에 "이용 요금: 2" 처럼
+            # 표시되고 있었다. 인터파크 랭킹 API 에는 실제 가격 필드가
+            # 없으므로(전체 27개 필드 확인) 지어내지 않고 안내로 대체한다.
+            price_info = "상세 페이지 참조"
             b_percent  = f"{item.get('bookingPercent', 0)}%"
             rank_num   = item.get("rank", 99)
             rel_url    = item.get("url", "")

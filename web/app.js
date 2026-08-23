@@ -115,6 +115,24 @@ const CONGEST_RADIUS_KM = 1.0;
 const CONGEST_CLASS = {
   '여유': 'LOW', '보통': 'MODERATE', '약간 붐빔': 'CONGESTED', '붐빔': 'VERY_CONGESTED'
 };
+// '한산한 곳' 정렬용 순서. 관측지점이 없는 항목은 순위를 매기지 않는다.
+const CONGEST_ORDER = { '여유': 1, '보통': 2, '약간 붐빔': 3, '붐빔': 4 };
+
+function congestOrderOf(item) {
+  const { lat, lon } = parseLatLon(item.region);
+  const near = findNearestCongestion(lat, lon);
+  return near ? (CONGEST_ORDER[near.area.congest_lvl] || null) : null;
+}
+
+// 무료 판정 — 측정된 요금 정보만 근거로 쓴다.
+// 티켓링크는 실제 가격을 주며 '0원' 이 무료를 뜻한다(17건).
+// 공공 공원이라서 무료일 것이라는 식의 추론은 하지 않는다.
+function isFreeItem(item) {
+  const f = (item.fee_info || '').trim();
+  if (!f) return false;
+  if (/무료/.test(f)) return true;
+  return /^0\s*원?$/.test(f.replace(/,/g, ''));
+}
 
 function findNearestCongestion(lat, lon) {
   if (lat === null || lon === null || !congestionData.length) return null;
@@ -196,12 +214,14 @@ function calcRecommendScore(item) {
     }
   }
 
-  // 5) congestion penalty (0~1)
-  const congestion = parseFloat(item.congestion_score) || 1;
-  const penalty = congestion * 0.2;
+  // 5) congestion penalty — 서울시 실시간 관측값이 있을 때만 적용한다.
+  //    예전에는 congestion_score(전 건 공란) || 1 이라 모든 항목에 같은
+  //    감점이 붙어 아무 역할도 하지 않았다. 측정값이 없으면 감점 없음.
+  const congOrder = congestOrderOf(item);
+  const penalty = congOrder === null ? 0 : congOrder * 0.2;
 
   // 6) free bonus
-  const freeBonus = /무료/.test(item.fee_info || '') ? 0.5 : 0;
+  const freeBonus = isFreeItem(item) ? 0.5 : 0;
 
   // 7) instagram hot bonus
   const instaBonus = /Instagram 핫플/.test(item.source_site || '') ? 0.3 : 0;
@@ -290,6 +310,7 @@ async function loadData() {
 
     mergeData();
 
+    updateSortChipAvailability();
     renderThemeChips();
     renderList();
     updateTicker();
@@ -323,6 +344,20 @@ function mergeData() {
     return { ...pl, ev, scores, tags, crowd: mt.seoul_crowd_level || 'UNKNOWN',
              crowd_measured_at: mt.updated_at || '', tmap_rank: parseInt(mt.tmap_rank) || 999 };
   });
+}
+
+// ── 정렬 칩 가용성 ───────────────────────────────────
+// 근거 데이터가 없는 정렬 옵션은 숨긴다. 눌러도 빈 목록만 나오는 버튼을
+// 남겨두면 사용자는 '결과가 없다' 가 아니라 '고장났다' 로 받아들인다.
+function updateSortChipAvailability() {
+  const rules = [
+    ['sort-free',  familyData.some(isFreeItem)],
+    ['sort-quiet', congestionData.length > 0],
+  ];
+  for (const [id, ok] of rules) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = ok ? '' : 'none';
+  }
 }
 
 // ── 테마 칩 렌더링 ───────────────────────────────────
@@ -528,11 +563,20 @@ function applySortFamily(list) {
     case 'distance':
       if (!userLat) return list; // 위치 없으면 그대로
       return list.sort((a, b) => (a._dist ?? 99999) - (b._dist ?? 99999));
-    case 'quiet':
-      return list.sort((a, b) => (parseFloat(a.congestion_score) || 5) - (parseFloat(b.congestion_score) || 5));
+    case 'quiet': {
+      // 서울시 실시간 관측값으로 정렬한다. 예전에는 congestion_score
+      // (전 건 공란) || 5 라서 전 항목이 같은 값이 되어 정렬이 무작동이었다.
+      // 관측지점이 없는 항목은 순서를 만들지 않고 뒤로 보낸다.
+      const withLv = [], without = [];
+      for (const it of list) {
+        const o = congestOrderOf(it);
+        (o === null ? without : withLv).push({ it, o });
+      }
+      withLv.sort((a, b) => a.o - b.o);
+      return withLv.map(x => x.it).concat(without.map(x => x.it));
+    }
     case 'free':
-      return list.filter(item => /무료/.test(item.fee_info || ''))
-        .concat(list.filter(item => !/무료/.test(item.fee_info || '')));
+      return list.filter(isFreeItem).concat(list.filter(it => !isFreeItem(it)));
     default:
       return list;
   }
@@ -552,7 +596,7 @@ function renderFamilyCard(item, idx) {
   const badges = [];
   const familyScore = parseFamilyScore(item.ai_tags);
   if (familyScore >= 0.9) badges.push('<span class="badge-pill green">👨‍👩‍👧 가족 최적</span>');
-  if (/무료/.test(item.fee_info || '')) badges.push('<span class="badge-pill free">💚 무료</span>');
+  if (isFreeItem(item)) badges.push('<span class="badge-pill free">💚 무료</span>');
   if (/Instagram/.test(item.source_site || '')) badges.push('<span class="badge-pill insta">📸 인스타 핫플</span>');
 
   // 마감 임박 배지
@@ -734,7 +778,7 @@ function openDetailFamily(key) {
     <div class="detail-name">${catEmoji} ${item.place_or_event_name || '-'}</div>
     <div class="detail-addr"><i class="fa-solid fa-location-dot" style="color:var(--nh-green)"></i>${regionDisplay}</div>
     <div class="detail-badges">
-      ${/무료/.test(item.fee_info || '') ? '<span class="badge-pill free">💚 무료</span>' : ''}
+      ${isFreeItem(item) ? '<span class="badge-pill free">💚 무료</span>' : ''}
       ${dist !== null ? `<span class="badge-pill dist">📍 ${formatDist(dist)}</span>` : ''}
       ${/인스타|Instagram/.test(item.source_site || '') ? '<span class="badge-pill insta">📸 인스타 핫플</span>' : ''}
       ${hasTicket ? '<span class="badge-pill ticket">🎫 예매 가능</span>' : ''}
