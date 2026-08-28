@@ -60,7 +60,9 @@ def clean_name(name):
 def fetch_naver_realtime_info(name, region):
     cache_key = f"{region}_{name}"
     if cache_key in cache_data:
-        return cache_data[cache_key]
+        cached = cache_data[cache_key]
+        if "review_count" in cached:
+            return cached
 
     clean_region = region.split('|')[0].strip() if region else ""
     query = f"{clean_region} {name}".strip()
@@ -68,6 +70,7 @@ def fetch_naver_realtime_info(name, region):
 
     lat, lng = None, None
     has_parking, has_nursing, has_diaper, has_stroller = False, False, False, False
+    review_count = 0
 
     try:
         r = requests.get(search_url, headers=HTTP_HEADERS, timeout=5)
@@ -86,6 +89,17 @@ def fetch_naver_realtime_info(name, region):
             has_diaper  = any(k in html for k in ["기저귀갈이대", "기저귀 교환대", "기저귀대", "기저귀"])
             has_stroller= any(k in html for k in ["유모차대여", "유모차 대여", "유모차 반입", "유모차"])
 
+            # 3) 리뷰 수 추출
+            matches = re.findall(r'리뷰\s*([\d,]+)|([\d,]+)건의\s*리뷰', html)
+            for m in matches:
+                val = m[0] or m[1]
+                if val:
+                    try:
+                        review_count = int(val.replace(',', ''))
+                        break
+                    except:
+                        pass
+
     except Exception as e:
         pass
 
@@ -95,7 +109,8 @@ def fetch_naver_realtime_info(name, region):
         "parking": has_parking,
         "nursing_room": has_nursing,
         "diaper_table": has_diaper,
-        "stroller": has_stroller
+        "stroller": has_stroller,
+        "review_count": review_count
     }
 
     cache_data[cache_key] = result
@@ -191,18 +206,37 @@ def enrich_data():
         # 3) 실검증 편의시설 ai_tags 구성
         new_ai_tags = build_ai_tags(real_info, category, orig_tags)
 
-        # 4) 인기도 & 혼잡도 수치
-        try:
-            pop_score = int(row.get('popularity_score', 80))
-            if pop_score <= 0: pop_score = random.randint(70, 96)
-        except:
-            pop_score = random.randint(70, 96)
+        # 4) 인기도 & 혼잡도 수치 (네이버 실시간 리뷰수 기반 연동)
+        import math
+        review_cnt = real_info.get("review_count", 0)
+        
+        if review_cnt > 0:
+            # 리뷰 수 기반 로그 스케일링 (최대 98점)
+            pop_score = int(60 + min(38, int(math.log10(review_cnt + 1) * 8.5)))
+        else:
+            # 기본값 정의 (카테고리별 차등)
+            base_pop = {
+                '공공키즈카페': 82,
+                '사설키즈카페': 76,
+                '자연친화': 72,
+                '가족체험': 75,
+                '문화생활': 70
+            }.get(category, 75)
+            pop_score = base_pop + random.randint(-3, 3)
 
-        try:
-            cong_score = int(row.get('congestion_score', 2))
-            if cong_score not in [1, 2, 3, 4, 5]: cong_score = random.randint(1, 3)
-        except:
-            cong_score = random.randint(1, 3)
+        # 인기도 기반 실시간 혼잡도 재산출 (1~5)
+        # 공공키즈카페는 예약제이므로 인기가 많아도 보통(2~3) 수준으로 통제됨
+        if category == '공공키즈카페':
+            cong_score = random.choice([2, 3])
+        else:
+            if pop_score >= 88:
+                cong_score = random.choice([4, 5])
+            elif pop_score >= 78:
+                cong_score = random.choice([3, 4])
+            elif pop_score >= 70:
+                cong_score = random.choice([2, 3])
+            else:
+                cong_score = 1
 
         # 5) 아빠 맞춤 설명 및 추천 이유 생성
         description = generate_llm_description(c_name, category, base_addr, target_age)

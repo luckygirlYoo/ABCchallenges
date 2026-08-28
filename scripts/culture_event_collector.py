@@ -12,7 +12,7 @@
 [API 키 발급]
 - 공연전시 API : data.go.kr → '공연전시정보조회서비스' 검색 → 활용신청 → tour_api_key 사용
 - 서울시 문화행사: data.seoul.go.kr → seoul_api_key 사용
-- 네이버 데이터랩: developers.naver.com → 앱 등록 → naver_client_id, naver_client_secret
+- 네이버 데이                               `터랩: developers.naver.com → 앱 등록 → naver_client_id, naver_client_secret
 """
 import sys, io
 import requests
