@@ -11,12 +11,10 @@ let userLon = null;
 const THEMES = {
   family: [], // family는 4카테고리 서브탭으로 대체 (하위 테마 칩 없음)
   couple: [
-    { id: 'popup',     label: '🎁 팝업스토어',     emoji: '🎁', bannerSub: '감성 데이트',   bannerTitle: '팝업스토어',    color: 'blue' },
-    { id: 'concert',   label: '🎵 콘서트·공연',    emoji: '🎵', bannerSub: '함께 즐기는',   bannerTitle: '콘서트·공연',   color: 'blue' },
-    { id: 'nightview', label: '🌃 야경·뷰포인트',  emoji: '🌃', bannerSub: '로맨틱한 밤',   bannerTitle: '야경·뷰포인트', color: 'blue' },
-    { id: 'cafe',      label: '☕ 카페 거리',       emoji: '☕', bannerSub: '골목 탐험',     bannerTitle: '카페 거리',     color: 'blue' },
-    { id: 'exhibition',label: '🖼️ 전시·미술관',    emoji: '🖼️', bannerSub: '문화를 즐겨요', bannerTitle: '전시·미술관',   color: 'blue' },
-    { id: 'summer',    label: '🏖️ 여름 피서지',    emoji: '🏖️', bannerSub: '시원하게 데이트', bannerTitle: '여름 피서지', color: 'blue' },
+    { id: 'concert',   label: '🎵 공연·콘서트', emoji: '🎵', bannerSub: '함께 즐기는',   bannerTitle: '공연·콘서트', color: 'blue' },
+    { id: 'popup',     label: '🎁 팝업스토어',  emoji: '🎁', bannerSub: '감성 데이트',   bannerTitle: '팝업스토어',  color: 'blue' },
+    { id: 'exhibition',label: '🖼️ 전시·미술관', emoji: '🖼️', bannerSub: '문화를 즐겨요', bannerTitle: '전시·미술관', color: 'blue' },
+    { id: 'outdoor',   label: '🌃 야경·나들이', emoji: '🌃', bannerSub: '로맨틱한 밤',   bannerTitle: '야경·나들이', color: 'blue' },
   ],
   single: [
     { id: 'exhibition',label: '🖼️ 전시·미술관',    emoji: '🖼️', bannerSub: '나만의 시간',    bannerTitle: '전시·미술관',  color: 'purple' },
@@ -52,6 +50,7 @@ const CROWD_LABEL = { LOW: '여유', MODERATE: '보통', CONGESTED: '혼잡', VE
 // ── 전역 상태 ────────────────────────────────────────
 let familyData    = [];  // total_family_data.csv 로드 결과
 let mergedData    = [];  // 기존 places+events 병합 (커플/싱글/맛집용 폴백)
+let coupleData    = [];  // total_couple_data.csv (커플 탭 전용)
 let placesData    = [];
 let eventsData    = [];
 let metricsData   = [];
@@ -302,6 +301,12 @@ async function loadData() {
       if (cRes.ok) congestionData = parseCSV(await cRes.text());
     } catch(e) { console.warn("혼잡도 데이터 로드 스킵:", e); }
 
+    // 2-2. 커플 통합 데이터 (커플 탭 전용). 없으면 조용히 건너뛴다.
+    try {
+      const cpRes = await fetch('../data/total_couple_data.csv?t=' + Date.now());
+      if (cpRes.ok) coupleData = parseCSV(await cpRes.text());
+    } catch (e) { console.warn('커플 데이터 로드 스킵:', e); }
+
     // 3) 주간 날씨 로드
     try {
       const wRes = await fetch('../data/weather.csv?t=' + Date.now());
@@ -464,6 +469,41 @@ function renderList() {
     if (query) {
       list = list.filter(p => (p.name || '').toLowerCase().includes(query) || (p.address || '').toLowerCase().includes(query));
     }
+  } else if (currentSeg === 'couple') {
+    // 데이터가 없으면 기존 동작으로 조용히 폴백한다 (화면이 깨지지 않게)
+    if (!coupleData.length) {
+      list = [...mergedData];
+      list.sort((a, b) => b.scores.couple - a.scores.couple);
+    } else {
+      list = [...coupleData];
+
+      // 테마 필터 — theme_ids 는 ';' 구분 다중값이다
+      const theme = THEMES.couple[currentThemeIdx];
+      if (theme) {
+        const filtered = list.filter(item =>
+          (item.theme_ids || '').split(';').includes(theme.id));
+        if (filtered.length) list = filtered;
+      }
+
+      // 검색 필터 (family 분기와 같은 방식)
+      if (query) {
+        list = list.filter(item =>
+          (item.place_or_event_name || '').toLowerCase().includes(query) ||
+          (item.region || '').toLowerCase().includes(query) ||
+          (item.description || '').toLowerCase().includes(query) ||
+          (item.ai_tags || '').toLowerCase().includes(query)
+        );
+      }
+
+      // 거리 계산 — family 분기의 map 패턴을 그대로 따를 것
+      list = list.map(item => {
+        const { lat, lon } = parseLatLon(item.region);
+        return { ...item, _lat: lat, _lon: lon,
+                 _dist: calcDistance(userLat, userLon, lat, lon) };
+      });
+
+      list = applySortCouple(list);
+    }
   } else {
     // 커플/싱글: 기존 mergedData 사용
     const scoreKey = currentSeg === 'couple' ? 'couple' : 'single';
@@ -514,7 +554,17 @@ function renderList() {
     return;
   }
 
-  if (currentSeg === 'family') {
+  if (currentSeg === 'couple' && coupleData.length) {
+    container.innerHTML = paged.map((item, idx) => renderCoupleCard(item, idx)).join('');
+    // 즐겨찾기 key 는 family 와 동일하게 encodeURIComponent(place_or_event_name) 이므로 toggleFavFamily 재사용
+    container.querySelectorAll('.fav-btn').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); toggleFavFamily(btn.dataset.key, btn); });
+    });
+    container.querySelectorAll('.place-item').forEach(item => {
+      item.addEventListener('click', () => openDetailCouple(item.dataset.key));
+      item.addEventListener('keydown', e => { if (e.key === 'Enter') openDetailCouple(item.dataset.key); });
+    });
+  } else if (currentSeg === 'family') {
     container.innerHTML = paged.map((item, idx) => renderFamilyCard(item, idx)).join('');
     // 이벤트 바인딩
     container.querySelectorAll('.fav-btn').forEach(btn => {
@@ -1241,6 +1291,240 @@ function initEvents() {
   document.getElementById('share-more-btn')?.addEventListener('click', shareMore);
 
   // 갱신 관련 코드는 관리자 페이지로 이동되어 사용자 뷰에서 제거됨
+}
+
+// ══════════════════════════════════════════
+// ★ 커플 탭 (total_couple_data.csv)
+// ══════════════════════════════════════════
+
+// RecommendScore 와 달리 family: 태그나 추정 couple_score 를 쓰지 않는다.
+// 실측된 인기도/마감/거리/혼잡도/무료 여부만으로 계산한다.
+function calcCoupleScore(item) {
+  // 1) popularity (0~100 → 0~2)
+  const popRaw = parseFloat(item.popularity_score);
+  const popScore = Number.isFinite(popRaw) ? (popRaw / 100) * 2.0 : 0;
+
+  // 2) 마감/진행 상태 — end_date 기준 (period 문자열 파싱 아님)
+  let freshness = 0;
+  if (item.end_date) {
+    const end = new Date(item.end_date);
+    const diffDays = (end - new Date()) / (1000 * 60 * 60 * 24);
+    if (diffDays >= 0 && diffDays <= 7) freshness = 1.5;      // 마감 7일 이내
+    else if (diffDays >= 0) freshness = 1.0;                  // 진행 중
+  } else {
+    freshness = 0.8; // 상설
+  }
+
+  // 3) 거리 보너스
+  let distBonus = 0;
+  if (userLat && userLon) {
+    const { lat, lon } = parseLatLon(item.region);
+    const dist = calcDistance(userLat, userLon, lat, lon);
+    if (dist !== null) {
+      if (dist <= 5) distBonus = 2.0;
+      else if (dist <= 15) distBonus = 1.0;
+      else if (dist <= 30) distBonus = 0.5;
+    }
+  }
+
+  // 4) 혼잡도 감점 — 실측값이 있을 때만
+  const congOrder = congestOrderOf(item);
+  const penalty = congOrder === null ? 0 : congOrder * 0.2;
+
+  // 5) 무료 보너스
+  const freeBonus = isFreeItem(item) ? 0.5 : 0;
+
+  return popScore + freshness + distBonus - penalty + freeBonus;
+}
+
+// 정렬 칩 6종. applySortFamily 와 동작을 맞추되 deadline 은 end_date 컬럼을 쓴다.
+function applySortCouple(list) {
+  switch (currentSort) {
+    case 'recommend':
+      return list.map(item => ({ ...item, _score: calcCoupleScore(item) }))
+                 .sort((a, b) => b._score - a._score);
+    case 'popular':
+      return list.sort((a, b) => (parseFloat(b.popularity_score) || 0) - (parseFloat(a.popularity_score) || 0));
+    case 'deadline':
+      return list.filter(item => item.end_date)
+        .sort((a, b) => new Date(a.end_date) - new Date(b.end_date))
+        .concat(list.filter(item => !item.end_date));
+    case 'distance':
+      if (!userLat) return list;
+      return list.sort((a, b) => (a._dist ?? 99999) - (b._dist ?? 99999));
+    case 'quiet': {
+      const withLv = [], without = [];
+      for (const it of list) {
+        const o = congestOrderOf(it);
+        (o === null ? without : withLv).push({ it, o });
+      }
+      withLv.sort((a, b) => a.o - b.o);
+      return withLv.map(x => x.it).concat(without.map(x => x.it));
+    }
+    case 'free':
+      return list.filter(isFreeItem).concat(list.filter(it => !isFreeItem(it)));
+    default:
+      return list;
+  }
+}
+
+const COUPLE_THEME_EMOJI = { concert: '🎵', popup: '🎁', exhibition: '🖼️', outdoor: '🌃' };
+
+// renderFamilyCard 의 HTML 구조·클래스를 그대로 재사용한다. 새 CSS 클래스는 만들지 않는다.
+function renderCoupleCard(item, idx) {
+  const rank = (currentPage - 1) * PAGE_SIZE + idx + 1;
+  const key = encodeURIComponent(item.place_or_event_name || String(idx));
+  const isFav = favorites.includes(key);
+
+  const firstTheme = (item.theme_ids || '').split(';')[0];
+  const catEmoji = COUPLE_THEME_EMOJI[firstTheme] || '📍';
+
+  // 배지 생성 — family 최적 배지는 넣지 않는다 (커플 탭이다)
+  const badges = [];
+  if (isFreeItem(item)) badges.push('<span class="badge-pill free">💚 무료</span>');
+  const popRaw = parseFloat(item.popularity_score);
+  if (Number.isFinite(popRaw) && popRaw >= 80) badges.push('<span class="badge-pill ticket">🔥 인기</span>');
+  if (item.end_date) {
+    const diff = (new Date(item.end_date) - new Date()) / (1000 * 60 * 60 * 24);
+    if (diff >= 0 && diff <= 7) badges.push(`<span class="badge-pill soon">⏰ 마감 ${Math.ceil(diff)}일</span>`);
+  }
+
+  // 거리 배지
+  if (item._dist !== null && item._dist !== undefined) {
+    const distLabel = item._dist <= 5 ? `🟢 ${formatDist(item._dist)}` : item._dist <= 15 ? `🟡 ${formatDist(item._dist)}` : `🔵 ${formatDist(item._dist)}`;
+    badges.push(`<span class="badge-pill dist">${distLabel}</span>`);
+  }
+
+  // 혼잡도 점 — 측정값 없으면 UNKNOWN
+  const crowdRaw = parseInt(item.congestion_score);
+  const crowdScore = Number.isFinite(crowdRaw) ? crowdRaw : null;
+  const crowdClass = crowdScore === null ? 'UNKNOWN'
+    : crowdScore <= 1 ? 'LOW' : crowdScore <= 2 ? 'MODERATE' : crowdScore <= 3 ? 'CONGESTED' : 'VERY_CONGESTED';
+
+  const regionDisplay = (item.region || '').split('|')[0].trim();
+
+  return `
+  <div class="place-item" data-key="${key}" role="button" tabindex="0" aria-label="${item.place_or_event_name} 상세 보기">
+    <span class="place-item__rank${rank <= 3 ? ' top' : ''}">${rank}</span>
+    <div class="place-item__info">
+      <div class="place-item__name">${item.place_or_event_name || '-'}</div>
+      <div class="place-item__meta">
+        <span class="place-item__addr">${regionDisplay}</span>
+        <span class="place-item__cat">${item.category || ''}</span>
+        <span class="crowd-dot ${crowdClass}" title="혼잡도: ${CROWD_LABEL[crowdClass] || ''}"></span>
+      </div>
+      <div class="place-item__badges">${badges.join('')}</div>
+    </div>
+    <div class="place-item__thumb">
+      ${catEmoji}
+      <button class="fav-btn${isFav ? ' active' : ''}" data-key="${key}" aria-label="즐겨찾기">
+        <i class="fa-${isFav ? 'solid' : 'regular'} fa-star"></i>
+      </button>
+    </div>
+  </div>`;
+}
+
+// openDetailFamily 구조를 그대로 본뜬다.
+function openDetailCouple(key) {
+  const item = coupleData.find(d => encodeURIComponent(d.place_or_event_name) === key);
+  if (!item) return;
+
+  const firstTheme = (item.theme_ids || '').split(';')[0];
+  const catEmoji = COUPLE_THEME_EMOJI[firstTheme] || '📍';
+  const { lat, lon } = parseLatLon(item.region);
+  const dist = calcDistance(userLat, userLon, lat, lon);
+  const isFav = favorites.includes(key);
+  const regionDisplay = (item.region || '').split('|')[0].trim();
+
+  const hasTicket = !!(item.booking_url && item.booking_url.startsWith('http'));
+
+  // 혼잡도 — 서울시 실시간 관측지점이 반경 안에 있을 때만 표시한다.
+  const near = findNearestCongestion(lat, lon);
+  const crowdClass = near ? (CONGEST_CLASS[near.area.congest_lvl] || 'UNKNOWN') : 'UNKNOWN';
+
+  // 인기도 — popularity_src 가 있을 때만 근거와 함께 표시한다.
+  // 소스마다 척도가 달라(예: VisitKorea 조회수 vs KOPIS 예매순위) 근거 없이 보여주면
+  // 사용자가 소스 간 비교가 가능하다고 오해한다.
+  const popRaw = parseFloat(item.popularity_score);
+  const popularityHTML = Number.isFinite(popRaw)
+    ? `<div class="detail-event-date"><i class="fa-solid fa-fire"></i> 인기도 ${popRaw}점${item.popularity_src ? ` (${item.popularity_src} 기준)` : ''}</div>`
+    : '';
+
+  const searchName = (regionDisplay + ' ' + (item.place_or_event_name || '')).trim();
+  const mapUrl = `https://map.kakao.com/link/search/${encodeURIComponent(searchName)}`;
+
+  document.getElementById('sheet-body').innerHTML = `
+    <div class="detail-cat">${item.category || '장소'}</div>
+    <div class="detail-name">${catEmoji} ${item.place_or_event_name || '-'}</div>
+    <div class="detail-addr"><i class="fa-solid fa-location-dot" style="color:var(--nh-green)"></i>${regionDisplay}</div>
+    <div class="detail-badges">
+      ${isFreeItem(item) ? '<span class="badge-pill free">💚 무료</span>' : ''}
+      ${dist !== null ? `<span class="badge-pill dist">📍 ${formatDist(dist)}</span>` : ''}
+      ${hasTicket ? '<span class="badge-pill ticket">🎫 예매 가능</span>' : ''}
+    </div>
+
+    <div class="detail-divider"></div>
+    <div class="detail-section-title"><i class="fa-solid fa-circle-info"></i> 상세 정보</div>
+    <div class="detail-event-box">
+      <div class="detail-event-title">💰 이용 요금: ${item.fee_info || '정보 없음'}</div>
+      <div class="detail-event-desc">${item.description || '설명 정보가 없습니다.'}</div>
+      ${item.period ? `<div class="detail-event-date"><i class="fa-regular fa-calendar"></i> 기간: ${item.period}</div>` : ''}
+      ${item.target_age ? `<div class="detail-event-date"><i class="fa-solid fa-child"></i> 관람 연령: ${item.target_age}</div>` : ''}
+      ${popularityHTML}
+      <div class="detail-event-date"><i class="fa-solid fa-database"></i> 출처: ${item.origin || item.source_site || '정보 없음'}</div>
+    </div>
+
+    <div class="detail-divider"></div>
+    <div class="detail-section-title"><i class="fa-solid fa-tower-broadcast"></i> 인파 현황</div>
+    ${dist !== null ? `<div class="crowd-row"><span class="crowd-label">내 위치에서</span><span class="crowd-val LOW">📍 ${formatDist(dist)}</span></div>` : ''}
+    <div class="crowd-row">
+      <span class="crowd-label">인파 혼잡도</span>
+      <span class="crowd-val ${crowdClass}">${near ? near.area.congest_lvl : '정보 없음'}</span>
+    </div>
+    ${near ? `
+    <div class="crowd-row">
+      <span class="crowd-label">관측지점</span>
+      <span class="crowd-val LOW" style="font-weight:500">${near.area.area_nm} · ${formatDist(near.dist)}</span>
+    </div>` : `
+    <div class="crowd-row">
+      <span class="crowd-label" style="font-size:11px;opacity:.7">이 지역에는 서울시 인파 관측지점(반경 1km)이 없습니다</span>
+      <span></span>
+    </div>`}
+
+    <div style="display:flex;gap:8px;margin-top:18px;">
+      <button class="detail-fav-btn" id="detail-fav-btn" style="
+        flex:0 0 auto; width:50px; height:50px; border-radius:var(--radius-md);
+        background:${isFav ? '#FFEBEE' : 'var(--nh-bg-sub)'};
+        border:1.5px solid ${isFav ? 'var(--nh-red)' : 'var(--nh-border)'};
+        color:${isFav ? 'var(--nh-red)' : 'var(--nh-text-third)'};
+        cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center;
+        transition:all 0.2s;">
+        <i class="fa-${isFav ? 'solid' : 'regular'} fa-star"></i>
+      </button>
+      <a href="${mapUrl}" target="_blank" class="map-btn" style="flex:1">
+        <i class="fa-solid fa-map-location-dot"></i> 카카오맵 길찾기
+      </a>
+      ${hasTicket ? `<a href="${item.booking_url}" target="_blank" class="ticket-btn" style="flex:1">
+        <i class="fa-solid fa-ticket"></i> 예매하기
+      </a>` : ''}
+    </div>
+  `;
+
+  document.getElementById('detail-fav-btn')?.addEventListener('click', () => {
+    toggleFavFamily(key, null);
+    const newFav = favorites.includes(key);
+    const btn = document.getElementById('detail-fav-btn');
+    if (btn) {
+      btn.style.background = newFav ? '#FFEBEE' : 'var(--nh-bg-sub)';
+      btn.style.borderColor = newFav ? 'var(--nh-red)' : 'var(--nh-border)';
+      btn.style.color = newFav ? 'var(--nh-red)' : 'var(--nh-text-third)';
+      btn.querySelector('i').className = `fa-${newFav ? 'solid' : 'regular'} fa-star`;
+    }
+  });
+
+  document.getElementById('detail-sheet').classList.add('open');
+  document.getElementById('sheet-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
 }
 
 // ── 날씨 배너 업데이트 ─────────────────────────────────
