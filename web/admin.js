@@ -112,20 +112,48 @@ function splitCSVLine(line) {
   return r;
 }
 
+// ── 데이터셋 인메모리 캐시 & 비동기 프리로드 ─────────────
+const datasetCache = {};
+
+async function fetchDataset(datasetKey) {
+  if (datasetCache[datasetKey]) {
+    return datasetCache[datasetKey];
+  }
+  const cfg = DATASET_CONFIG[datasetKey];
+  const res = await fetch(`${cfg.file}?t=${Date.now()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  const { rows } = parseCSV(text);
+  datasetCache[datasetKey] = rows;
+  return rows;
+}
+
+// 백그라운드 프리로드 (전체 탭 0초 즉시 전환 지원)
+function preloadOtherDatasets() {
+  ['family', 'couple', 'single'].forEach(k => {
+    if (k !== currentDataset && !datasetCache[k]) {
+      fetchDataset(k).catch(e => console.warn(`Dataset preload warning (${k}):`, e));
+    }
+  });
+}
+
 // ── 데이터 로드 ──────────────────────────────────────
-async function loadData() {
+async function loadData(forceRefresh = false) {
   const cfg = DATASET_CONFIG[currentDataset];
   try {
-    const res = await fetch(`${cfg.file}?t=${Date.now()}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const { rows } = parseCSV(text);
+    if (forceRefresh) {
+      delete datasetCache[currentDataset];
+    }
+    const rows = await fetchDataset(currentDataset);
     allData = rows;
     filteredData = rows;
 
     renderStats(rows);
     renderCategorySwitcher();
     applyFilter();
+
+    // 나머지 데이터셋도 백그라운드에서 미리 캐싱
+    preloadOtherDatasets();
   } catch (err) {
     console.error(`데이터 로드 실패 (${currentDataset}):`, err);
     document.getElementById('table-body').innerHTML =
@@ -142,8 +170,10 @@ function renderStats(rows) {
   grid.innerHTML = cfg.stats.map(stat => {
     const count = rows.filter(stat.filter).length;
     return `
-      <div class="stat-box" style="border-left: 3px solid ${stat.color};">
-        <div class="stat-icon" style="color: ${stat.color};"><i class="fa-solid ${stat.icon}"></i></div>
+      <div class="stat-box">
+        <div class="stat-icon-wrap" style="background: ${stat.color}18; color: ${stat.color};">
+          <i class="fa-solid ${stat.icon}"></i>
+        </div>
         <div class="stat-info">
           <span class="stat-val">${count.toLocaleString()}</span>
           <span class="stat-lbl">${stat.label}</span>
@@ -346,19 +376,19 @@ function applyFilter() {
 // ── 카테고리 뱃지 헬퍼 ──────────────────────────────
 function getCategoryBadge(cat) {
   if (!cat) return '-';
-  if (cat.includes('공공키즈')) return `<span class="cat-badge public">🏛️ ${cat}</span>`;
-  if (cat.includes('키즈')) return `<span class="cat-badge kids">🏠 ${cat}</span>`;
-  if (cat.includes('자연') || cat.includes('공원')) return `<span class="cat-badge nature">🌿 ${cat}</span>`;
-  if (cat.includes('문화') || cat.includes('역사')) return `<span class="cat-badge culture">🎭 ${cat}</span>`;
-  if (cat.includes('체험') || cat.includes('액티비티')) return `<span class="cat-badge experience">🎯 ${cat}</span>`;
-  if (cat.includes('서점') || cat.includes('북카페')) return `<span class="cat-badge public" style="background:rgba(34,211,238,0.15);color:#22D3EE;">📚 ${cat}</span>`;
-  if (cat.includes('공연') || cat.includes('콘서트') || cat.includes('뮤지컬') || cat.includes('연극') || cat.includes('음악')) return `<span class="cat-badge culture" style="background:rgba(244,63,94,0.15);color:#F43F5E;">🎵 ${cat}</span>`;
-  if (cat.includes('전시') || cat.includes('미술')) return `<span class="cat-badge culture">🖼️ ${cat}</span>`;
-  if (cat.includes('카페')) return `<span class="cat-badge experience">☕ ${cat}</span>`;
-  if (cat.includes('맛집')) return `<span class="cat-badge nature" style="background:rgba(251,191,36,0.15);color:#FBBF24;">🍽️ ${cat}</span>`;
-  if (cat.includes('야경') || cat.includes('드라이브')) return `<span class="cat-badge public" style="background:rgba(129,140,248,0.15);color:#818CF8;">🌙 ${cat}</span>`;
-  if (cat.includes('힐링') || cat.includes('스파')) return `<span class="cat-badge nature">🌿 ${cat}</span>`;
-  return `<span class="cat-badge public">${cat}</span>`;
+  if (cat.includes('공공키즈')) return `<span class="cat-badge badge-public">🏛️ ${cat}</span>`;
+  if (cat.includes('키즈')) return `<span class="cat-badge badge-kids">🏠 ${cat}</span>`;
+  if (cat.includes('자연') || cat.includes('공원')) return `<span class="cat-badge badge-nature">🌿 ${cat}</span>`;
+  if (cat.includes('문화') || cat.includes('역사')) return `<span class="cat-badge badge-culture">🎭 ${cat}</span>`;
+  if (cat.includes('체험') || cat.includes('액티비티')) return `<span class="cat-badge badge-experience">🎯 ${cat}</span>`;
+  if (cat.includes('서점') || cat.includes('북카페')) return `<span class="cat-badge badge-book">📚 ${cat}</span>`;
+  if (cat.includes('공연') || cat.includes('콘서트') || cat.includes('뮤지컬') || cat.includes('연극') || cat.includes('음악')) return `<span class="cat-badge badge-music">🎵 ${cat}</span>`;
+  if (cat.includes('전시') || cat.includes('미술')) return `<span class="cat-badge badge-art">🖼️ ${cat}</span>`;
+  if (cat.includes('카페')) return `<span class="cat-badge badge-cafe">☕ ${cat}</span>`;
+  if (cat.includes('맛집')) return `<span class="cat-badge badge-food">🍽️ ${cat}</span>`;
+  if (cat.includes('야경') || cat.includes('드라이브')) return `<span class="cat-badge badge-night">🌙 ${cat}</span>`;
+  if (cat.includes('힐링') || cat.includes('스파')) return `<span class="cat-badge badge-healing">🫧 ${cat}</span>`;
+  return `<span class="cat-badge badge-default">📌 ${cat}</span>`;
 }
 
 // ── 테이블 렌더링 ─────────────────────────────────────
@@ -368,7 +398,7 @@ function renderTable() {
   const pageInfo = document.getElementById('admin-page-info');
 
   const COLS = [
-    { key: 'category',            label: '카테고리',     width: '100px' },
+    { key: 'category',            label: '카테고리',     width: '105px' },
     { key: 'place_or_event_name', label: '장소/행사명',   width: '170px' },
     { key: 'target_age',          label: '대상/기간',     width: '110px' },
     { key: 'region',              label: '지역',          width: '120px' },
@@ -485,6 +515,8 @@ function exportCSV() {
 }
 
 // ── 이벤트 ──────────────────────────────────────────
+let searchDebounceTimer = null;
+
 document.addEventListener('DOMContentLoaded', () => {
   // 데이터 로드 & 배치 상태 초기화
   loadData();
@@ -502,8 +534,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 검색
-  document.getElementById('admin-search-input')?.addEventListener('input', applyFilter);
+  // 검색 (디바운스 100ms로 끊김 없는 빠른 검색)
+  document.getElementById('admin-search-input')?.addEventListener('input', () => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      applyFilter();
+    }, 100);
+  });
 
   // 페이지네이션
   document.getElementById('admin-page-prev')?.addEventListener('click', () => {

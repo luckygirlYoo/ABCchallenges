@@ -17,13 +17,13 @@ last_status_msg = ""
 
 # ── 15단계 배치 상태 정의 (1~8 원천수집 → 9~11 가족통합 → 12 커플통합 → 13~15 가족 후처리) ──
 BATCH_STEPS_TEMPLATE = [
-    # ── 1단계: 원천 수집 (전부 상호 독립, data/ 아래 어떤 파일도 읽지 않음) ──
+    # ── 1단계: 원천 데이터 수집 (가족·커플·싱글 10개 소스 전수 수집) ──
     {
         "id": "step1",
         "name": "culture_event_collector.py",
         "title": "[배치 1] 공공 문화행사 API & 미술관 수집",
         "script": "scripts/culture_event_collector.py",
-        "desc": "서울·경기 공공 문화행사 API 및 미술관/전시장 수집 (가족·커플 공용 소스)",
+        "desc": "서울·경기 공공 문화행사 API 및 미술관/전시장 수집 (가족·커플·싱글 공용 소스)",
         "status": "PENDING",
         "message": "대기 중"
     },
@@ -32,7 +32,7 @@ BATCH_STEPS_TEMPLATE = [
         "name": "live_ticket_crawler.py",
         "title": "[배치 2] 인터파크 티켓 라이브 크롤링",
         "script": "scripts/live_ticket_crawler.py",
-        "desc": "인터파크 콘서트/뮤지컬/전시/아동 실시간 예매 수집 (가족·커플 공용 소스)",
+        "desc": "인터파크 콘서트/뮤지컬/전시/아동 실시간 예매 수집 (가족·커플·싱글 공용 소스)",
         "status": "PENDING",
         "message": "대기 중"
     },
@@ -41,7 +41,7 @@ BATCH_STEPS_TEMPLATE = [
         "name": "live_ticketlink_crawler.py",
         "title": "[배치 3] 티켓링크 전수 크롤링 & 대상연령 파싱",
         "script": "scripts/live_ticketlink_crawler.py",
-        "desc": "티켓링크 전체 라이브 상품 전수 수집 및 target_age 파싱 (가족·커플 공용 소스)",
+        "desc": "티켓링크 전체 라이브 상품 전수 수집 및 target_age 파싱 (가족·커플·싱글 공용 소스)",
         "status": "PENDING",
         "message": "대기 중"
     },
@@ -90,98 +90,97 @@ BATCH_STEPS_TEMPLATE = [
         "status": "PENDING",
         "message": "대기 중"
     },
-    # ── 2단계: 가족 통합 (강제 순서: 통합 → 좌표보정 → 중복제거) ──
     {
         "id": "step9",
+        "name": "naver_local_single_collector.py",
+        "title": "[배치 9] 싱글매니아 라이프스타일 장소 수집",
+        "script": "scripts/naver_local_single_collector.py",
+        "desc": "독립서점/북카페/아트숍/명상센터/고궁/사찰/갤러리 등 네이버 로컬 API 수집 (싱글 전용 소스)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step10",
+        "name": "independent_bookstore_collector.py",
+        "title": "[배치 10] 독립서점 공공데이터 수집",
+        "script": "scripts/independent_bookstore_collector.py",
+        "desc": "문화공공데이터광장 전국 독립서점 및 운영정보 API 수집 (싱글 전용 소스)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    # ── 2단계: 실시간 정보 및 부가 데이터 수집 ──
+    {
+        "id": "step11",
+        "name": "collect_seoul_congestion.py",
+        "title": "[배치 11] 서울시 실시간 인파 혼잡도 수집",
+        "script": "scripts/collect_seoul_congestion.py",
+        "desc": "관측지점 121곳의 실시간 혼잡도·인구·연령비 수집 (가족·커플·싱글 공통 사용)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step12",
+        "name": "collect_amenities.py",
+        "title": "[배치 12] 편의시설 수집 (네이버 플레이스)",
+        "script": "scripts/collect_amenities.py",
+        "desc": "카드가 있는 유형만 조회해 확인된 편의시설 태그 부여",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    # ── 3단계: 가족 1차 통합, 좌표 보정 & LLM 태그 보강 ──
+    {
+        "id": "step13",
         "name": "generate_total_family_data.py",
-        "title": "[배치 9] total_family_data 1차 데이터 통합",
+        "title": "[배치 13] total_family_data 1차 데이터 통합",
         "script": "scripts/generate_total_family_data.py",
         "desc": "수집된 5개 소스 통합, 중복 제거 및 CSV/JSON 1차 생성",
         "status": "PENDING",
         "message": "대기 중"
     },
     {
-        "id": "step10",
+        "id": "step14",
         "name": "geocode_event_venues.py",
-        "title": "[배치 10] 공연·행사 공연장 좌표 부여",
+        "title": "[배치 14] 공연·행사 공연장 좌표 부여 & 캐시 갱신",
         "script": "scripts/geocode_event_venues.py",
-        "desc": "공연 제목 대신 region 의 공연장명으로 좌표 조회 (반환 장소명 검증). venue_geocode_cache.json 을 갱신하며, 이 캐시는 다음 배치 12(커플 통합)도 함께 사용한다",
+        "desc": "공연 제목 대신 region 의 공연장명으로 좌표 조회 (반환 장소명 검증). venue_geocode_cache.json 을 갱신하여 커플 통합 단계에 공유",
         "status": "PENDING",
         "message": "대기 중"
     },
     {
-        "id": "step11",
+        "id": "step15",
         "name": "dedupe_places.py",
-        "title": "[배치 11] 좌표 기반 장소 중복 제거",
+        "title": "[배치 15] 좌표 기반 장소 중복 제거",
         "script": "scripts/dedupe_places.py",
         "desc": "같은 좌표·유사 이름의 장소 병합 (행사는 병합하지 않음)",
         "args": ["--apply"],
         "status": "PENDING",
         "message": "대기 중"
     },
-    # ── 3단계: 커플 통합 (배치 10 이 갱신한 좌표 캐시를 바로 활용) ──
-    {
-        "id": "step12",
-        "name": "generate_total_couple_data.py",
-        "title": "[배치 12] total_couple_data 데이터 통합",
-        "script": "scripts/generate_total_couple_data.py",
-        "desc": "KOPIS·팝업·커플명소 + 티켓링크/인터파크/문화행사 6개 소스를 커플 탭용으로 통합",
-        "status": "PENDING",
-        "message": "대기 중"
-    },
-    # ── 4단계: 가족 전용 후처리 (커플 파이프라인은 설계상 후처리 단계 없음) ──
-    {
-        "id": "step13",
-        "name": "collect_seoul_congestion.py",
-        "title": "[배치 13] 서울시 실시간 인파 혼잡도 수집",
-        "script": "scripts/collect_seoul_congestion.py",
-        "desc": "관측지점 121곳의 실시간 혼잡도·인구·연령비 수집 (별도 파일, 프론트가 가족·커플 공통으로 사용)",
-        "status": "PENDING",
-        "message": "대기 중"
-    },
-    {
-        "id": "step14",
-        "name": "collect_amenities.py",
-        "title": "[배치 14] 편의시설 수집 (네이버 플레이스)",
-        "script": "scripts/collect_amenities.py",
-        "desc": "카드가 있는 유형만 조회해 확인된 편의시설만 태그 부여",
-        "status": "PENDING",
-        "message": "대기 중"
-    },
-    {
-        "id": "step15",
-        "name": "enrich_total_family_data.py",
-        "title": "[배치 15] LLM & 설명 보강",
-        "script": "scripts/enrich_total_family_data.py",
-        "desc": "편의시설 태그 및 설명/추천이유 보강",
-        "status": "PENDING",
-        "message": "대기 중"
-    },
-    # ── 5단계: 싱글매니아 전용 수집·통합 ──
     {
         "id": "step16",
-        "name": "naver_local_single_collector.py",
-        "title": "[배치 16] 싱글매니아 라이프스타일 장소 수집",
-        "script": "scripts/naver_local_single_collector.py",
-        "desc": "독립서점/북카페/아트숍/명상센터/고궁/사찰/갤러리 목록 등 네이버 로컬 API 수집",
+        "name": "enrich_total_family_data.py",
+        "title": "[배치 16] LLM & 설명/태그 보강",
+        "script": "scripts/enrich_total_family_data.py",
+        "desc": "편의시설 태그 및 설명/추천이유 LLM 보강",
         "status": "PENDING",
         "message": "대기 중"
     },
+    # ── 4단계: 커플 & 싱글매니아 최종 데이터셋 통합 ──
     {
         "id": "step17",
-        "name": "independent_bookstore_collector.py",
-        "title": "[배치 17] 독립서점 공공데이터 수집",
-        "script": "scripts/independent_bookstore_collector.py",
-        "desc": "문화공공데이터광장 전국 독립서점 및 운영정보 API 수집",
+        "name": "generate_total_couple_data.py",
+        "title": "[배치 17] total_couple_data 데이터 통합",
+        "script": "scripts/generate_total_couple_data.py",
+        "desc": "KOPIS·팝업·커플명소 + 티켓링크/인터파크/문화행사 6개 소스를 커플 탭용으로 최종 통합",
         "status": "PENDING",
         "message": "대기 중"
     },
     {
         "id": "step18",
         "name": "generate_single_data.py",
-        "title": "[배치 18] total_single_data 통합",
+        "title": "[배치 18] total_single_data 데이터 통합",
         "script": "scripts/generate_single_data.py",
-        "desc": "싱글매니아 6대 카테고리로 분류·필터링 후 CSV/JSON 최종 생성",
+        "desc": "싱글매니아 6대 카테고리로 분류·필터링 후 CSV/JSON 최종 통합 생성",
         "status": "PENDING",
         "message": "대기 중"
     }
