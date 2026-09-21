@@ -1125,12 +1125,19 @@ function updateTicker() {
 // ★ 공유하기
 // ══════════════════════════════════════════
 function openShareSheet() {
-  const favFamilyItems = familyData.filter(d => favorites.includes(encodeURIComponent(d.place_or_event_name)));
+  // familyData + coupleData 전체를 대상으로 즐겨찾기 개수 계산
+  const allFavData = [
+    ...familyData,
+    ...coupleData,
+  ];
+  const favCount = allFavData.filter(d =>
+    favorites.includes(encodeURIComponent(d.place_or_event_name))
+  ).length;
   const desc = document.getElementById('share-desc');
-  if (favFamilyItems.length === 0) {
+  if (favCount === 0) {
     desc.textContent = '즐겨찾기한 장소가 없어요. 장소를 추가한 후 공유해 보세요!';
   } else {
-    desc.textContent = `즐겨찾기 장소 ${favFamilyItems.length}곳을 친구에게 공유해 보세요!`;
+    desc.textContent = `즐겨찾기 장소 ${favCount}곳을 친구에게 공유해 보세요!`;
   }
   document.getElementById('share-sheet').classList.add('open');
   document.getElementById('share-overlay').classList.add('open');
@@ -1144,30 +1151,38 @@ function closeShareSheet() {
 }
 
 function buildShareText() {
-  const favFamilyItems = familyData.filter(d => favorites.includes(encodeURIComponent(d.place_or_event_name)));
-  if (favFamilyItems.length === 0) return '주말해 앱에서 AI 맞춤 가족 여가 장소를 추천받아 보세요! 🌿';
-  const list = favFamilyItems.slice(0, 5).map((d, i) => `${i + 1}. ${d.place_or_event_name} (${d.category})`).join('\n');
-  return `🌿 주말해 — 내 즐겨찾기 장소\n\n${list}\n\n👉 주말해 앱: ${window.location.origin}/web/index.html`;
+  // familyData + coupleData 전체에서 즐겨찾기 항목 수집
+  const allFavData = [...familyData, ...coupleData];
+  const favItems = allFavData.filter(d =>
+    favorites.includes(encodeURIComponent(d.place_or_event_name))
+  );
+  if (favItems.length === 0) return '주말해 앱에서 AI 맞춤 여가 장소를 추천받아 보세요! 🌿';
+  const list = favItems.slice(0, 5).map((d, i) => `${i + 1}. ${d.place_or_event_name} (${d.category})`).join('\n');
+  return `🌿 주말해 — 내 즐겨찾기 장소\n\n${list}\n\n👉 주말해: ${window.location.origin}/web/index.html`;
 }
 
 function shareKakao() {
   const text = buildShareText();
-  const kakaoUrl = `kakaolink://send?text=${encodeURIComponent(text)}`;
-  const a = document.createElement('a'); a.href = kakaoUrl;
-  try {
-    a.click();
-    setTimeout(() => {
-      if (navigator.share) navigator.share({ title: '주말해 즐겨찾기', text });
-      else copyToClipboard(text, '카카오톡 공유 준비 완료! 클립보드에 복사되었습니다.');
-    }, 1200);
-  } catch { if (navigator.share) navigator.share({ title: '주말해 즐겨찾기', text }); else copyToClipboard(text); }
-}
-
-function shareAllonebank() {
-  const text = buildShareText();
-  const a = document.createElement('a'); a.href = `allonebank://share?text=${encodeURIComponent(text)}`;
-  try { a.click(); setTimeout(() => copyToClipboard(text, '올원뱅크 앱이 없습니다. 클립보드에 복사되었습니다.'), 1200); }
-  catch { copyToClipboard(text); }
+  const shareUrl = `${window.location.origin}/web/index.html`;
+  // iOS Safari / 모바일 환경: Web Share API 우선 사용
+  // (kakaolink:// 커스텀 스킴은 카카오 JS SDK 없이는 동작 안 하고 Safari에서 오류 발생)
+  if (navigator.share) {
+    navigator.share({
+      title: '🌿 주말해 — 내 즐겨찾기',
+      text: text,
+      url: shareUrl,
+    }).then(() => {
+      // 사용자가 카카오톡 선택 시 자동 전달됨
+    }).catch(err => {
+      // 사용자가 취소했거나 오류 — 클립보드 폴백
+      if (err.name !== 'AbortError') {
+        copyToClipboard(text, '카카오톡 공유 준비 완료! 클립보드에 복사되었습니다.');
+      }
+    });
+  } else {
+    // 데스크톱: 클립보드 복사 후 카카오톡 PC 버전 URL 스킴 시도
+    copyToClipboard(text, '카카오톡 공유용 텍스트가 클립보드에 복사되었습니다. 카카오톡에 붙여넣어 주세요.');
+  }
 }
 
 function shareInstagram() {
@@ -1285,7 +1300,7 @@ function initEvents() {
   document.getElementById('share-close-btn')?.addEventListener('click', closeShareSheet);
   document.getElementById('share-overlay')?.addEventListener('click', closeShareSheet);
   document.getElementById('share-kakao')?.addEventListener('click', shareKakao);
-  document.getElementById('share-allone')?.addEventListener('click', shareAllonebank);
+  // share-allone 제거됨
   document.getElementById('share-instagram')?.addEventListener('click', shareInstagram);
   document.getElementById('share-copy')?.addEventListener('click', copyLink);
   document.getElementById('share-more-btn')?.addEventListener('click', shareMore);
