@@ -31,6 +31,14 @@ HTTP_HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+# 카카오 로컬 API 키 (지오코딩용)
+_CFG_PATH = os.path.join(BASE_DIR, "config.json")
+try:
+    with open(_CFG_PATH, "r", encoding="utf-8") as _f:
+        CONFIG_KAKAO_KEY = json.load(_f).get("api_keys", {}).get("kakao_api_key", "")
+except Exception:
+    CONFIG_KAKAO_KEY = ""
+
 # ── 캐시 로드/저장 ──────────────────────────────────────
 cache_data = {}
 if os.path.exists(CACHE_FILE):
@@ -56,61 +64,229 @@ def clean_name(name):
     name = re.sub(r'[^\w\s\-\.\(\)]', '', name)
     return name.strip()
 
-# ── 2. 네이버 실시간 검색 기반 위도/경도 & 편의시설 추출 ─────
-def fetch_naver_realtime_info(name, region):
-    cache_key = f"{region}_{name}"
-    if cache_key in cache_data:
-        cached = cache_data[cache_key]
-        if "review_count" in cached:
-            return cached
+# ── 2. 카카오 로컬 API 기반 위도/경도 ──────────────────────
+#
+# [기존 구현의 치명적 결함 — 2026-08-23 실측으로 확인]
+# 이전 코드는 네이버 검색 결과 HTML 전체에서 정규식으로 첫 번째 "y"/"x" 를
+# 집어왔다. 그런데 그 값은 장소 좌표가 아니라 페이지 템플릿의 고정 요소였다.
+#   실측: 강남구/노원구/연수구/수원시/마포구 5개 검색어가 전부 동일 좌표 반환
+#         (37.2935, 126.8694) — 오차 14.5~43.4km
+#   저장 데이터: total_family_data.csv 좌표 1,355건 중 고유값 3개,
+#                1,353건(99.9%)이 (37.485305, 126.866500) 하나
+# 즉 "장소별 좌표"가 아니라 "그날 네이버 페이지의 상수"를 복사한 것이었다.
+# 길찾기에 쓰면 전원이 같은 엉뚱한 곳으로 안내된다.
+#
+# → 정식 지오코딩(카카오 로컬 API)으로 교체한다.
+#   좌표를 못 얻으면 반드시 비운다. 추측값을 넣지 않는다.
+KAKAO_KEY = CONFIG_KAKAO_KEY  # config.json 의 kakao_api_key
+KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
-    clean_region = region.split('|')[0].strip() if region else ""
-    query = f"{clean_region} {name}".strip()
+# 카카오 로컬 서비스가 꺼져 있으면(403) 매 건 재시도할 이유가 없으므로
+# 한 번 확인한 뒤 전역으로 비활성화한다.
+_kakao_disabled = False
+_kakao_disabled_reason = ""
+
+
+def dedupe_repeated_suffix(name):
+    """인접 반복 접미사 제거.
+
+    수집 스크래퍼가 앵커 텍스트를 이어 붙이면서 같은 어절이 두 번 들어간
+    이름이 대량 생성됐다.
+      고양어린이박물관박물관              → 고양어린이박물관
+      남양주시육아종합지원센터육아종합지원센터   → 남양주시육아종합지원센터
+    이 상태로 검색하면 네이버가 플레이스 카드를 띄우지 못해
+    편의시설·좌표가 전부 미확인으로 떨어진다.
+    (실측: 정제 전 0/20 → 정제 후 3/8 에서 conveniences 확보)
+    """
+    if not name:
+        return name
+    prev = None
+    while prev != name:
+        prev = name
+        n = len(name)
+        # (a) 바로 붙은 반복:  ...박물관박물관
+        for k in range(n // 2, 1, -1):
+            if name[-k:] == name[-2 * k:-k]:
+                name = name[:-k]
+                break
+        else:
+            # (b) 떨어져 있는 반복: 용인시육아종합지원센터 구갈점육아종합지원센터
+            #     오탐을 막기 위해 4글자 이상 토큰만 대상으로 한다.
+            for k in range(n // 2, 3, -1):
+                tail = name[-k:]
+                if tail in name[:-k]:
+                    name = name[:-k]
+                    break
+    return name.strip()
+
+
+def normalize_place_name(name):
+    """검색용 장소명 정규화."""
+    if not name:
+        return ""
+    n = str(name).strip()
+    # 블로그 제목 조각에서 흔한 앞뒤 군더더기 제거
+    n = re.sub(r'^\d[\d,]*만?\s*명?\s*(이상\s*)?(찾은|방문한|다녀온)\s*', '', n)
+    n = re.sub(r'\s*(국내|해외|추천|모음|총정리|베스트|TOP\s*\d+)\s*$', '', n)
+    n = dedupe_repeated_suffix(n)
+    return n.strip()
+
+
+# region 앞부분의 행정구역(시도 + 시군구) 추출용
+_ADMIN_RE = re.compile(
+    r'^((?:서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)\S*)'
+    r'\s+(\S*(?:구|시|군))'
+)
+
+
+def build_search_query(name, region):
+    """검색 질의 생성.
+
+    ⚠ naver_search_collector 는 region 을 f"{지역} {장소명}" 으로 저장한다.
+      (예: region="서울 강남구 캘리클럽 역삼점", name="캘리클럽 역삼점")
+      그래서 기존처럼 region + " " + name 을 붙이면
+        "서울 강남구 캘리클럽 역삼점 캘리클럽 역삼점"
+      같은 중복 질의가 되어 네이버가 플레이스 카드를 띄우지 않는다.
+      실측: 중복 질의 → conveniences 없음 / 중복 제거 → 정상 반환.
+      이 버그 때문에 편의시설·좌표가 전부 미확인으로 떨어지고 있었다.
+    """
+    name = normalize_place_name(name)
+    base = (region or "").split('|')[0].strip()
+
+    # region 은 f"{지역} {장소명}" 형태라 깨진 장소명을 그대로 품고 있다.
+    # (예: region="경기 고양시 고양어린이박물관박물관")
+    # region 전체를 쓰면 정규화한 이름이 무의미해지므로, 행정구역 접두어만 뽑는다.
+    prefix = ""
+    am = _ADMIN_RE.match(base)
+    if am:
+        prefix = f"{am.group(1)} {am.group(2)}"
+
+    if not name:
+        return base
+
+    # 실측 비교(25건 샘플): 지역+장소명 4% vs 장소명 단독 8%.
+    # region 의 지역 배정 자체가 틀린 경우가 있어(예: 동작구 시설이 관악구로 기록)
+    # 접두어를 붙이면 오히려 플레이스 카드가 안 뜬다. 장소명 단독을 기본으로 쓴다.
+    # prefix 는 이름이 너무 짧아 단독으로는 모호할 때만 보조로 사용한다.
+    if prefix and len(name) <= 4:
+        return f"{prefix} {name}".strip()
+    return name
+
+
+def geocode_kakao(name, region):
+    """카카오 로컬 키워드 검색으로 (lat, lng) 조회. 실패 시 (None, None)."""
+    global _kakao_disabled, _kakao_disabled_reason
+
+    if _kakao_disabled or not KAKAO_KEY or KAKAO_KEY.startswith("YOUR_"):
+        return None, None
+
+    query = build_search_query(name, region)
+    if not query:
+        return None, None
+
+    try:
+        r = requests.get(
+            KAKAO_KEYWORD_URL,
+            headers={"Authorization": f"KakaoAK {KAKAO_KEY}"},
+            params={"query": query, "size": 1},
+            timeout=5,
+        )
+        if r.status_code == 401 or r.status_code == 403:
+            _kakao_disabled = True
+            _kakao_disabled_reason = r.text[:200]
+            print(f"  [카카오 로컬] 사용 불가 (HTTP {r.status_code}) → 이후 좌표는 모두 공란")
+            print(f"                {_kakao_disabled_reason}")
+            return None, None
+        if r.status_code != 200:
+            return None, None
+
+        docs = r.json().get("documents", [])
+        if not docs:
+            return None, None
+        d = docs[0]
+        # 카카오는 x=경도(lng), y=위도(lat)
+        return d.get("y"), d.get("x")
+    except Exception as e:
+        print(f"  [카카오 로컬 오류] {type(e).__name__}: {e}")
+        return None, None
+
+
+# ── 편의시설: 네이버 플레이스 구조화 필드(conveniences) 파싱 ──────
+#
+# [기존 구현의 결함 — 2026-08-23 실측]
+# 이전 코드는 1.6MB 검색 HTML 전체에 특정 단어가 있는지만 봤다.
+#   has_nursing = "수유실" in html
+# 그런데 "수유실"은 페이지에 항상 존재하는 JS 라벨 사전
+#   {"nursing_room":"수유실", "hospital":"병원", ...}
+# 에 들어 있어 **모든 장소에서 무조건 True** 가 됐다.
+# "주차"도 124회 등장 중 대부분이 방문자 리뷰·광고 문구였다.
+# 그 결과 2,497건 중 1,399건(56%)이 "주차 가능 & 수유실 완비"로 판정됐다.
+#
+# → 장소별 구조화 필드인 "conveniences" 배열만 인정한다.
+#   예) ["단체 이용 가능","무선 인터넷","남/녀 화장실 구분","유아시설 (놀이방)","주차"]
+#   배열이 없으면 True/False 가 아니라 **미확인(None)** 으로 둔다.
+#
+# ⚠ 네이버 conveniences 어휘에는 수유실·기저귀갈이대·유모차 항목이 없다.
+#   따라서 이 세 가지는 어떤 방법으로도 검증할 수 없어 태그에서 제외한다.
+_CONV_RE = re.compile(r'"conveniences"\s*:\s*\[([^\]]*)\]')
+
+
+def parse_conveniences(html):
+    """네이버 플레이스 편의시설 배열 반환. 필드가 없으면 None(미확인)."""
+    m = _CONV_RE.search(html)
+    if not m:
+        return None
+    items = re.findall(r'"([^"]+)"', m.group(1))
+    # 네이버 JSON 은 슬래시를 이스케이프해서 내보낸다(예: "남\u002F녀 화장실 구분").
+    # 리터럴 6글자 시퀀스를 '/' 로 되돌린다.
+    return [it.replace(chr(92) + 'u002F', '/') for it in items]
+
+
+def fetch_naver_realtime_info(name, region):
+    """장소별 좌표 + 편의시설 정보.
+
+    좌표    : 카카오 로컬 API (정식 지오코딩)
+    편의시설: 네이버 플레이스 conveniences 배열 (구조화 필드)
+
+    conveniences 가 없으면 amenities_known=False 로 두고, 편의시설에 대해
+    아무 주장도 하지 않는다.
+    """
+    cache_key = f"{region}_{name}"
+    cached = cache_data.get(cache_key)
+    if cached is not None:
+        # 좌표가 빈 캐시는 카카오 로컬이 꺼져 있을 때 생긴 것이다.
+        # 지금 카카오를 쓸 수 있으면 좌표만 다시 조회해 캐시를 갱신한다.
+        if not cached.get("lat") and not _kakao_disabled and KAKAO_KEY and not KAKAO_KEY.startswith("YOUR_"):
+            lat, lng = geocode_kakao(name, region)
+            if lat and lng:
+                cached["lat"], cached["lng"] = lat, lng
+        return cached
+
+    lat, lng = geocode_kakao(name, region)
+
+    query = build_search_query(name, region)
     search_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(query)}"
 
-    lat, lng = None, None
-    has_parking, has_nursing, has_diaper, has_stroller = False, False, False, False
-    review_count = 0
-
+    conv = None
     try:
         r = requests.get(search_url, headers=HTTP_HEADERS, timeout=5)
         if r.status_code == 200:
-            html = r.text
-
-            # 1) 위도(lat), 경도(lng) 추출
-            lats = re.findall(r'"y":"([0-9\.]+)"', html) or re.findall(r'"lat":"([0-9\.]+)"', html)
-            lngs = re.findall(r'"x":"([0-9\.]+)"', html) or re.findall(r'"lng":"([0-9\.]+)"', html)
-            if lats: lat = lats[0]
-            if lngs: lng = lngs[0]
-
-            # 2) 실제 네이버 검색 내용 기준 편의시설 검증
-            has_parking = any(k in html for k in ["주차", "주차장", "발렛", "무료주차", "주차가능", "주차지원"])
-            has_nursing = any(k in html for k in ["수유실", "수유", "아기수유", "수유실완비"])
-            has_diaper  = any(k in html for k in ["기저귀갈이대", "기저귀 교환대", "기저귀대", "기저귀"])
-            has_stroller= any(k in html for k in ["유모차대여", "유모차 대여", "유모차 반입", "유모차"])
-
-            # 3) 리뷰 수 추출
-            matches = re.findall(r'리뷰\s*([\d,]+)|([\d,]+)건의\s*리뷰', html)
-            for m in matches:
-                val = m[0] or m[1]
-                if val:
-                    try:
-                        review_count = int(val.replace(',', ''))
-                        break
-                    except:
-                        pass
-
+            conv = parse_conveniences(r.text)
     except Exception as e:
-        pass
+        print(f"  [네이버 검색 오류] {name}: {type(e).__name__}")
 
+    joined = " ".join(conv) if conv else ""
     result = {
         "lat": lat,
         "lng": lng,
-        "parking": has_parking,
-        "nursing_room": has_nursing,
-        "diaper_table": has_diaper,
-        "stroller": has_stroller,
-        "review_count": review_count
+        "amenities_known": conv is not None,
+        "conveniences": conv or [],
+        # 배열에 명시된 것만 True. 미확인이면 False 가 아니라 '주장 안 함'이며,
+        # amenities_known 으로 구분한다.
+        "parking":    ("주차" in joined),
+        "kids_facility": ("유아시설" in joined or "놀이방" in joined),
+        "restroom":   ("화장실" in joined),
+        "wifi":       ("인터넷" in joined or "와이파이" in joined),
     }
 
     cache_data[cache_key] = result
@@ -118,19 +294,26 @@ def fetch_naver_realtime_info(name, region):
 
 # ── 3. 편의시설 태그 조합 ──────────────────────────────
 def build_ai_tags(real_info, cat, orig_tags):
+    """편의시설 태그는 네이버 conveniences 로 확인된 것만 부여한다.
+
+    제거한 것:
+      - parking:0.8  : 미확인인데도 '0.8' 이라는 그럴듯한 수치를 붙이고 있었다.
+                       확인 안 되면 태그 자체를 달지 않는다.
+      - nursing_room / diaper_table : 카테고리가 키즈카페라는 이유만으로
+                       '수유실·기저귀갈이대 완비'를 단정했다. 근거가 없다.
+                       게다가 네이버 conveniences 어휘에 두 항목이 존재하지
+                       않아 애초에 검증이 불가능하다.
+      - stroller     : 위와 동일하게 검증 불가.
+    """
     tags = ["family:1.0"]
 
-    if real_info.get("parking"): tags.append("parking:1.0")
-    else: tags.append("parking:0.8")
-
-    if real_info.get("nursing_room") or cat in ["키즈카페", "공공키즈카페/실내놀이터"]:
-        tags.append("nursing_room:1.0")
-
-    if real_info.get("diaper_table") or cat in ["키즈카페", "공공키즈카페/실내놀이터"]:
-        tags.append("diaper_table:1.0")
-
-    if real_info.get("stroller"):
-        tags.append("stroller:1.0")
+    # 확인된 편의시설만 태그로 부착
+    if real_info.get("parking"):
+        tags.append("parking:1.0")
+    if real_info.get("kids_facility"):
+        tags.append("kids_facility:1.0")
+    if real_info.get("restroom"):
+        tags.append("restroom:1.0")
 
     if '키즈카페' in cat or '놀이터' in cat: tags.append("play:1.0")
     if '물놀이' in cat or '자연' in cat: tags.append("water:1.0")
@@ -143,10 +326,19 @@ def build_ai_tags(real_info, cat, orig_tags):
 
 # ── 4. 추천 이유 및 설명 생성 ────────────────────────────
 def generate_recommend_reason(name, cat, ai_tags, real_info):
-    if real_info.get("nursing_room") and real_info.get("parking"):
-        return "🅿️ 실시간 네이버 검증 주차 가능 & 🍼 수유실·기저귀갈이대 완비로 아기와 방문 최적"
-    elif real_info.get("parking") and real_info.get("diaper_table"):
-        return "🅿️ 네이버 지도 실검증 주차 지원 & 🚼 기저귀갈이대 완비로 편안한 나들이"
+    """추천 이유. 확인된 사실만 언급하고, 미확인 항목은 아예 말하지 않는다.
+
+    기존에는 편의시설 판정이 틀렸는데도 "실시간 네이버 검증", "실검증",
+    "완비" 같은 단정 표현을 썼다. 2,497건 중 1,399건(56%)이 근거 없이
+    "주차 가능 & 수유실·기저귀갈이대 완비"로 표시됐다.
+    """
+    conv = real_info.get("conveniences") or []
+    if real_info.get("parking") and real_info.get("kids_facility"):
+        return "🅿️ 주차 가능 · 🧸 유아시설 보유 (네이버 플레이스 등록 정보)"
+    elif real_info.get("parking"):
+        return "🅿️ 주차 가능 (네이버 플레이스 등록 정보)"
+    elif real_info.get("kids_facility"):
+        return "🧸 유아시설 보유 (네이버 플레이스 등록 정보)"
     elif 'water:1.0' in ai_tags:
         return "🌊 시원한 물놀이와 야외 활동을 한 번에 즐길 수 있는 여름 인기 장소"
     elif 'play:1.0' in ai_tags or '키즈' in cat:
@@ -156,13 +348,45 @@ def generate_recommend_reason(name, cat, ai_tags, real_info):
     else:
         return "👨‍👧 아빠와 아이가 주말에 부담 없이 특별한 추억을 만들 수 있는 베스트 추천지"
 
-def generate_llm_description(name, cat, region, target_age):
+# 과거 버전이 생성한 템플릿 설명문 판별용 지문.
+# 이 문구들이 들어 있으면 사람이 쓴 원본이 아니라 자동 생성물이다.
+_LEGACY_DESC_MARKERS = (
+    "실시간 네이버 검색 기반으로",
+    "주말 아이 동반 최적 명소입니다",
+    "연령대 아이와 아빠가 함께 방문하기에 적극 추천",
+)
+
+
+def _is_legacy_template(text):
+    return any(mk in text for mk in _LEGACY_DESC_MARKERS)
+
+
+def generate_llm_description(name, cat, region, target_age, original="", real_info=None):
+    """설명문.
+
+    변경점:
+      1. "실시간 네이버 검색 기반으로 ... 검증되었으며" 문구 삭제.
+         실제 검증 로직이 부정확했는데도 2,497건 전부가 이 주장을 달고 있었다.
+      2. 원본 설명이 있으면 그대로 보존한다. 기존에는 공연·전시 202건의
+         원본 설명까지 "주말 아이 동반 최적 명소"로 덮어써 내용이 왜곡됐다.
+      3. 편의시설은 확인된 것만 덧붙인다.
+    """
+    original = (original or "").strip()
+    # 과거 실행이 남긴 템플릿 문구는 '원본'이 아니다. 그대로 보존하면
+    # 허위 검증 주장이 계속 살아남으므로 없는 것으로 취급하고 재생성한다.
+    if original and not _is_legacy_template(original) and original.lower() not in ("nan", "none"):
+        return original[:400]
+
     reg_clean = region.split('|')[0].strip() if region else "수도권"
-    return (
-        f"[{name}]는 {reg_clean} 지역에 위치한 주말 아이 동반 최적 명소입니다. "
-        f"실시간 네이버 검색 기반으로 주차 및 수유실, 편의시설이 검증되었으며, "
-        f"{target_age} 연령대 아이와 아빠가 함께 방문하기에 적극 추천합니다."
-    )
+    parts = [f"[{name}]는 {reg_clean} 지역의 {cat} 장소입니다."]
+
+    conv = (real_info or {}).get("conveniences") or []
+    if conv:
+        parts.append("네이버 플레이스 등록 편의시설: " + ", ".join(conv[:5]) + ".")
+
+    if target_age and target_age.lower() not in ("nan", "none"):
+        parts.append(f"대상 연령: {target_age}.")
+    return " ".join(parts)
 
 # ── 5. 메인 보강 파이프라인 ────────────────────────────────
 def enrich_data():
@@ -201,45 +425,41 @@ def enrich_data():
         if lat and lng:
             region_fmt = f"{base_addr} | 위도:{lat}, 경도:{lng}"
         else:
-            region_fmt = base_addr
+            # 자체 조회가 실패해도, 수집 단계에서 이미 확보한 좌표가 있으면
+            # 지우지 않는다. place_search_collector 는 카카오 로컬에서 좌표를
+            # 함께 받아오므로, 여기서 덮어쓰면 확보한 좌표를 잃는다.
+            _m = re.search(r'위도:([\d.]+), 경도:([\d.]+)', orig_region)
+            if _m:
+                region_fmt = f"{base_addr} | 위도:{_m.group(1)}, 경도:{_m.group(2)}"
+            else:
+                region_fmt = base_addr
 
         # 3) 실검증 편의시설 ai_tags 구성
         new_ai_tags = build_ai_tags(real_info, category, orig_tags)
 
-        # 4) 인기도 & 혼잡도 수치 (네이버 실시간 리뷰수 기반 연동)
-        import math
-        review_cnt = real_info.get("review_count", 0)
-        
-        if review_cnt > 0:
-            # 리뷰 수 기반 로그 스케일링 (최대 98점)
-            pop_score = int(60 + min(38, int(math.log10(review_cnt + 1) * 8.5)))
-        else:
-            # 기본값 정의 (카테고리별 차등)
-            base_pop = {
-                '공공키즈카페': 82,
-                '사설키즈카페': 76,
-                '자연친화': 72,
-                '가족체험': 75,
-                '문화생활': 70
-            }.get(category, 75)
-            pop_score = base_pop + random.randint(-3, 3)
+        # 4) 인기도 & 혼잡도 — 원본 값을 그대로 통과시킨다.
+        #    기존에는 값이 없거나 범위를 벗어나면 randint 로 메워서, 측정된 적
+        #    없는 수치가 실측값처럼 저장됐다. 측정값이 없으면 공란으로 둔다.
+        def _passthrough(key, valid=None):
+            raw = str(row.get(key, '')).strip()
+            if raw in ('', 'nan', 'None'):
+                return ""
+            try:
+                v = int(float(raw))
+            except (TypeError, ValueError):
+                return ""
+            if valid is not None and v not in valid:
+                return ""
+            return v
 
-        # 인기도 기반 실시간 혼잡도 재산출 (1~5)
-        # 공공키즈카페는 예약제이므로 인기가 많아도 보통(2~3) 수준으로 통제됨
-        if category == '공공키즈카페':
-            cong_score = random.choice([2, 3])
-        else:
-            if pop_score >= 88:
-                cong_score = random.choice([4, 5])
-            elif pop_score >= 78:
-                cong_score = random.choice([3, 4])
-            elif pop_score >= 70:
-                cong_score = random.choice([2, 3])
-            else:
-                cong_score = 1
+        pop_score  = _passthrough('popularity_score')
+        cong_score = _passthrough('congestion_score', valid=[1, 2, 3, 4, 5])
 
         # 5) 아빠 맞춤 설명 및 추천 이유 생성
-        description = generate_llm_description(c_name, category, base_addr, target_age)
+        original_desc = str(row.get('description', '')).strip()
+        description = generate_llm_description(
+            c_name, category, base_addr, target_age,
+            original=original_desc, real_info=real_info)
         recommend_reason = generate_recommend_reason(c_name, category, new_ai_tags, real_info)
 
         enriched_rows.append({
@@ -263,6 +483,8 @@ def enrich_data():
         count += 1
         if count % 100 == 0 or count == len(df):
             print(f"  [보강 진행] {count}/{len(df)}건 처리 완료 (위도/경도 & 편의시설 네이버 실검증 진행 중)")
+            # 중간 저장: 2,500여 건 도중에 중단돼도 지금까지의 조회를 잃지 않는다.
+            save_cache()
 
     # 캐시 저장
     save_cache()

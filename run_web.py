@@ -15,14 +15,15 @@ is_collecting = False
 last_collected_at = "미실행"
 last_status_msg = ""
 
-# ── 7단계 배치 상태 정의 ─────────────────────────────────
+# ── 15단계 배치 상태 정의 (1~8 원천수집 → 9~11 가족통합 → 12 커플통합 → 13~15 가족 후처리) ──
 BATCH_STEPS_TEMPLATE = [
+    # ── 1단계: 원천 수집 (전부 상호 독립, data/ 아래 어떤 파일도 읽지 않음) ──
     {
         "id": "step1",
         "name": "culture_event_collector.py",
         "title": "[배치 1] 공공 문화행사 API & 미술관 수집",
         "script": "scripts/culture_event_collector.py",
-        "desc": "서울·경기 공공 문화행사 API 및 미술관/전시장 수집",
+        "desc": "서울·경기 공공 문화행사 API 및 미술관/전시장 수집 (가족·커플 공용 소스)",
         "status": "PENDING",
         "message": "대기 중"
     },
@@ -31,7 +32,7 @@ BATCH_STEPS_TEMPLATE = [
         "name": "live_ticket_crawler.py",
         "title": "[배치 2] 인터파크 티켓 라이브 크롤링",
         "script": "scripts/live_ticket_crawler.py",
-        "desc": "인터파크 콘서트/뮤지컬/전시/아동 실시간 예매 수집",
+        "desc": "인터파크 콘서트/뮤지컬/전시/아동 실시간 예매 수집 (가족·커플 공용 소스)",
         "status": "PENDING",
         "message": "대기 중"
     },
@@ -40,7 +41,7 @@ BATCH_STEPS_TEMPLATE = [
         "name": "live_ticketlink_crawler.py",
         "title": "[배치 3] 티켓링크 전수 크롤링 & 대상연령 파싱",
         "script": "scripts/live_ticketlink_crawler.py",
-        "desc": "티켓링크 전체 라이브 상품 전수 수집 및 target_age 파싱",
+        "desc": "티켓링크 전체 라이브 상품 전수 수집 및 target_age 파싱 (가족·커플 공용 소스)",
         "status": "PENDING",
         "message": "대기 중"
     },
@@ -49,34 +50,110 @@ BATCH_STEPS_TEMPLATE = [
         "name": "public_childcare_collector.py",
         "title": "[배치 4] 공공 키즈카페 & 육아 공간 수집",
         "script": "scripts/public_childcare_collector.py",
-        "desc": "서울형 키즈카페 및 지자체 공공 육아 포털 데이터 수집",
+        "desc": "서울형 키즈카페 및 지자체 공공 육아 포털 데이터 수집 (가족 전용 소스)",
         "status": "PENDING",
         "message": "대기 중"
     },
     {
         "id": "step5",
-        "name": "naver_search_collector.py",
-        "title": "[배치 5] 네이버 시군구×테마 장소 수집",
-        "script": "scripts/naver_search_collector.py",
-        "desc": "수도권 63개 시군구 × 3개 테마 네이버 실시간 장소 크롤링",
+        "name": "place_search_collector.py",
+        "title": "[배치 5] 카카오 로컬 시군구×테마 장소 수집",
+        "script": "scripts/place_search_collector.py",
+        "desc": "수도권 63개 시군구 × 8개 테마 카카오 로컬 장소 수집 (가족 전용 소스, 좌표 포함)",
         "status": "PENDING",
         "message": "대기 중"
     },
     {
         "id": "step6",
+        "name": "kopis_performance_collector.py",
+        "title": "[배치 6] KOPIS 공연예술 수집",
+        "script": "scripts/kopis_performance_collector.py",
+        "desc": "KOPIS 공연목록·상세·시설·예매상황판 수집 (커플 전용 소스, 좌표·예매순위 자체 보유)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step7",
+        "name": "popup_collector.py",
+        "title": "[배치 7] 팝업스토어 수집 (팝가)",
+        "script": "scripts/popup_collector.py",
+        "desc": "popga.co.kr 팝업스토어 전수 수집 (커플 전용 소스)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step8",
+        "name": "visitkorea_couple_collector.py",
+        "title": "[배치 8] 커플/데이트 명소 수집 (대한민국 구석구석)",
+        "script": "scripts/visitkorea_couple_collector.py",
+        "desc": "야경·커플데이트·연인 태그 기반 명소 수집 (커플 전용 소스)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    # ── 2단계: 가족 통합 (강제 순서: 통합 → 좌표보정 → 중복제거) ──
+    {
+        "id": "step9",
         "name": "generate_total_family_data.py",
-        "title": "[배치 6] total_family_data 1차 데이터 통합",
+        "title": "[배치 9] total_family_data 1차 데이터 통합",
         "script": "scripts/generate_total_family_data.py",
         "desc": "수집된 5개 소스 통합, 중복 제거 및 CSV/JSON 1차 생성",
         "status": "PENDING",
         "message": "대기 중"
     },
     {
-        "id": "step7",
+        "id": "step10",
+        "name": "geocode_event_venues.py",
+        "title": "[배치 10] 공연·행사 공연장 좌표 부여",
+        "script": "scripts/geocode_event_venues.py",
+        "desc": "공연 제목 대신 region 의 공연장명으로 좌표 조회 (반환 장소명 검증). venue_geocode_cache.json 을 갱신하며, 이 캐시는 다음 배치 12(커플 통합)도 함께 사용한다",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step11",
+        "name": "dedupe_places.py",
+        "title": "[배치 11] 좌표 기반 장소 중복 제거",
+        "script": "scripts/dedupe_places.py",
+        "desc": "같은 좌표·유사 이름의 장소 병합 (행사는 병합하지 않음)",
+        "args": ["--apply"],
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    # ── 3단계: 커플 통합 (배치 10 이 갱신한 좌표 캐시를 바로 활용) ──
+    {
+        "id": "step12",
+        "name": "generate_total_couple_data.py",
+        "title": "[배치 12] total_couple_data 데이터 통합",
+        "script": "scripts/generate_total_couple_data.py",
+        "desc": "KOPIS·팝업·커플명소 + 티켓링크/인터파크/문화행사 6개 소스를 커플 탭용으로 통합",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    # ── 4단계: 가족 전용 후처리 (커플 파이프라인은 설계상 후처리 단계 없음) ──
+    {
+        "id": "step13",
+        "name": "collect_seoul_congestion.py",
+        "title": "[배치 13] 서울시 실시간 인파 혼잡도 수집",
+        "script": "scripts/collect_seoul_congestion.py",
+        "desc": "관측지점 121곳의 실시간 혼잡도·인구·연령비 수집 (별도 파일, 프론트가 가족·커플 공통으로 사용)",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step14",
+        "name": "collect_amenities.py",
+        "title": "[배치 14] 편의시설 수집 (네이버 플레이스)",
+        "script": "scripts/collect_amenities.py",
+        "desc": "카드가 있는 유형만 조회해 확인된 편의시설만 태그 부여",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step15",
         "name": "enrich_total_family_data.py",
-        "title": "[배치 7] LLM & 편의시설 2차 보강",
+        "title": "[배치 15] LLM & 설명 보강",
         "script": "scripts/enrich_total_family_data.py",
-        "desc": "주차/수유실/기저귀갈이대 태그, 혼잡도/인기도 및 LLM 추천이유 생성",
+        "desc": "편의시설 태그 및 설명/추천이유 보강",
         "status": "PENDING",
         "message": "대기 중"
     }
@@ -91,7 +168,7 @@ batch_state = {
 }
 
 def execute_batch_pipeline():
-    """배치 스크립트 7개를 순차 실행하고 실시간 상태를 갱신하는 비동기 쓰레드"""
+    """배치 스크립트를 순차 실행하고 실시간 상태를 갱신하는 비동기 쓰레드"""
     global is_collecting, last_collected_at, last_status_msg, batch_state
     is_collecting = True
     batch_state["is_running"] = True
@@ -110,7 +187,10 @@ def execute_batch_pipeline():
         print(f"\n▶ [{i+1}/{total_steps}] {step['title']} 실행 시작...")
 
         try:
-            subprocess.run([sys.executable, script_path], check=True, cwd=BASE_DIR)
+            # 단계별 추가 인자 지원. dedupe_places.py 처럼 기본이 dry-run 인
+            # 스크립트는 args 로 --apply 를 넘겨야 실제로 반영된다.
+            cmd = [sys.executable, script_path] + list(step.get("args", []))
+            subprocess.run(cmd, check=True, cwd=BASE_DIR)
             step["status"] = "SUCCESS"
             step["message"] = "성공"
             print(f"✅ [{i+1}/{total_steps}] {step['title']} 완료!")
@@ -128,7 +208,7 @@ def execute_batch_pipeline():
         last_collected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         last_status_msg = "완료되었습니다."
         batch_state["status_msg"] = "완료되었습니다."
-        print(f"\n🎉 [배치 파이프라인] 모든 7개 배치가 성공적으로 완료되었습니다! ({last_collected_at})")
+        print(f"\n🎉 [배치 파이프라인] 모든 {total_steps}개 배치가 성공적으로 완료되었습니다! ({last_collected_at})")
     else:
         last_status_msg = "일부 배치 실행 중 오류가 발생했습니다."
         batch_state["status_msg"] = "일부 배치 실행 중 오류가 발생했습니다."
@@ -162,7 +242,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"success": False, "message": "이미 수집 배치 프로세스가 실행 중입니다."})
                 return
             
-            # 7단계 배치 상태 리셋
+            # 15단계 배치 상태 리셋
             batch_state["is_running"] = True
             batch_state["overall_progress"] = 0
             batch_state["current_step_id"] = "step1"

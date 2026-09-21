@@ -4,7 +4,7 @@ total_family_data.csv 1차 통합 및 스키마 정규화 스크립트 v5.0
 주요 기능:
   1. 5개 수집 소스 통합:
      - 공공 육아·키즈카페 (564건) -> '공공키즈카페'
-     - 네이버 장소검색 (9대 테마: 사설키즈카페, 계곡, 수영장, 모래놀이, 공원, 물놀이터, 미술, 농장체험, 박물관) -> '사설키즈카페', '자연친화', '가족체험'
+     - 장소검색 (카카오 로컬 8대 테마: 키즈카페, 계곡, 수영장/물놀이터, 공원, 수목원, 농장, 박물관/과학관, 체험관) -> '사설키즈카페', '자연친화', '가족체험'
      - 서울·경기 공공 문화행사 (200건) -> '문화생활' / '가족체험'
      - 인터파크 티켓 (가족/어린이/아동 전용) -> '문화생활'
      - 티켓링크 티켓 (가족/어린이/아동 전용) -> '문화생활'
@@ -25,7 +25,11 @@ PATH_CHILDCARE = os.path.join(DATA_DIR, "public_childcare_data.csv")
 PATH_CULTURE   = os.path.join(DATA_DIR, "culture_events_raw.csv")
 PATH_INTERPARK = os.path.join(DATA_DIR, "live_interpark_tickets.csv")
 PATH_TICKETLINK= os.path.join(DATA_DIR, "live_ticketlink_tickets.csv")
-PATH_NAVER     = os.path.join(DATA_DIR, "naver_search_results.csv")
+# 장소 수집 결과. v7.0 부터 카카오 로컬 기반 place_search_results.csv 를 쓴다.
+# 새 수집기를 아직 돌리지 않은 환경에서는 구 파일(naver_search_results.csv)로
+# 폴백한다. 폴백이 없으면 이 소스가 0건이 되어 통합 결과가 크게 줄어든다.
+PATH_PLACES    = os.path.join(DATA_DIR, "place_search_results.csv")
+PATH_NAVER_OLD = os.path.join(DATA_DIR, "naver_search_results.csv")
 
 OUT_CSV  = os.path.join(DATA_DIR, "total_family_data.csv")
 OUT_JSON = os.path.join(DATA_DIR, "total_family_data.json")
@@ -117,8 +121,10 @@ def from_childcare(df):
             "ai_tags":             ensure_family_tag(safe_str(r.get('ai_tags', ''))),
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          theme_tags(cat, name),
-            "congestion_score":    random.randint(1, 3),
-            "popularity_score":    random.randint(75, 95),
+            # 난수 생성 제거. 측정 소스가 없으면 원본 값을 그대로 넘기고,
+            # 원본도 없으면 공란으로 둔다. (기존: randint(1,3) / randint(75,95))
+            "congestion_score":    safe_str(r.get('congestion_score', '')),
+            "popularity_score":    safe_str(r.get('popularity_score', '')),
         })
     return rows
 
@@ -138,7 +144,9 @@ def from_culture_events(df):
         ai_tag = ensure_family_tag(safe_str(r.get('ai_tags', '')))
         
         rows.append({
-            "source_site":         safe_str(r.get('source_site', url or '문화행사')),
+            # culture_events_raw.csv 의 출처 컬럼명은 'source' 다.
+            # 'source_site' 로만 찾으면 폴백이 걸려 긴 URL이 출처로 표시된다.
+            "source_site":         safe_str(r.get('source_site', '')) or safe_str(r.get('source', '')) or '문화행사',
             "category":            cat,
             "place_or_event_name": name,
             "period":              period,
@@ -150,8 +158,10 @@ def from_culture_events(df):
             "ai_tags":             ai_tag,
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          theme_tags(cat, name),
-            "congestion_score":    random.randint(2, 4),
-            "popularity_score":    random.randint(60, 88),
+            # 난수 생성 제거. (기존: randint(2,4) / randint(60,88))
+            # culture_events_raw.csv 의 popularity 는 네이버 데이터랩 실측값이다.
+            "congestion_score":    "",
+            "popularity_score":    safe_str(r.get('popularity', '')),
         })
     return rows
 
@@ -174,8 +184,10 @@ def from_tickets(df, source_label):
         rank  = safe_str(r.get('rank', ''))
         target_age = safe_str(r.get('target_age', ''), "전체 (가족/어린이 동반)")
         
+        # rank 기반 계산은 인터파크가 제공하는 실제 순위이므로 유지한다.
+        # 다만 rank 를 못 읽었을 때 난수로 메우던 폴백은 제거한다.
         try:   pop = max(50, 100 - int(rank) * 2)
-        except: pop = random.randint(65, 92)
+        except: pop = None
         rows.append({
             "source_site":         source_label,
             "category":            cat,
@@ -189,21 +201,21 @@ def from_tickets(df, source_label):
             "ai_tags":             ensure_family_tag(ai_tag),
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          theme_tags(cat, name),
-            "congestion_score":    random.randint(3, 5),
-            "popularity_score":    min(100, pop),
+            "congestion_score":    "",
+            "popularity_score":    min(100, pop) if pop is not None else "",
         })
     return rows
 
-def from_naver_search(df):
+def from_place_search(df):
     rows = []
     for _, r in df.iterrows():
         name    = safe_str(r.get('place_or_event_name', ''))
         if not name: continue
         cat_raw = safe_str(r.get('category', ''))
-        cat     = categorize(cat_raw, name, '네이버 장소검색')
+        cat     = categorize(cat_raw, name, '장소검색')
 
         rows.append({
-            "source_site":         safe_str(r.get('source_site', '네이버 장소검색')),
+            "source_site":         safe_str(r.get('source_site', '장소검색')),
             "category":            cat,
             "place_or_event_name": name,
             "period":              "상시",
@@ -215,8 +227,9 @@ def from_naver_search(df):
             "ai_tags":             ensure_family_tag(safe_str(r.get('ai_tags', ''))),
             "crawled_at":          safe_str(r.get('crawled_at', NOW)),
             "theme_tags":          safe_str(r.get('theme_tags', theme_tags(cat, name))),
-            "congestion_score":    int(r.get('congestion_score', 2)),
-            "popularity_score":    int(r.get('popularity_score', 85)),
+            # 기존에는 값이 없으면 2 / 85 를 기본값으로 채워 넣었다.
+            "congestion_score":    safe_str(r.get('congestion_score', '')),
+            "popularity_score":    safe_str(r.get('popularity_score', '')),
         })
     return rows
 
@@ -248,17 +261,25 @@ def main():
         all_rows.extend(r_tl)
         print(f"✅ 티켓링크: {len(r_tl)}건")
 
-    if os.path.exists(PATH_NAVER):
-        df_nav = pd.read_csv(PATH_NAVER, encoding='utf-8-sig')
-        r_nav = from_naver_search(df_nav)
+    place_path = PATH_PLACES if os.path.exists(PATH_PLACES) else PATH_NAVER_OLD
+    if os.path.exists(place_path):
+        print(f"   (장소 소스: {os.path.basename(place_path)})")
+        df_nav = pd.read_csv(place_path, encoding='utf-8-sig')
+        r_nav = from_place_search(df_nav)
         all_rows.extend(r_nav)
-        print(f"✅ 네이버 정밀 장소: {len(r_nav)}건")
+        print(f"✅ 정밀 장소: {len(r_nav)}건")
 
     df_all = pd.DataFrame(all_rows)
     b_len = len(df_all)
     df_all = df_all.drop_duplicates(subset=['place_or_event_name'])
     a_len = len(df_all)
     print(f"\n중복 제거: {b_len} → {a_len}건")
+
+    if a_len == 0:
+        # 입력 소스가 전부 비면 total_family_data.csv/json 이 통째로 사라진다.
+        # 덮어쓰지 않고 종료 코드 1 로 실패를 알린다.
+        print(f"[실패] 생성 결과 0건 → 기존 파일 보존 (덮어쓰기 안 함): {OUT_CSV}")
+        sys.exit(1)
 
     os.makedirs(DATA_DIR, exist_ok=True)
     df_all.to_csv(OUT_CSV, index=False, encoding='utf-8-sig')

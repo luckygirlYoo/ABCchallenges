@@ -103,6 +103,7 @@ def crawl_ticketlink_all() -> list[dict]:
     print("  [티켓링크 크롤러 v4.0] 가족/어린이/아동 전용 태깅 수집 시작...")
     
     unique_items = {}
+    failed_queries = []
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     api_url = "https://www.ticketlink.co.kr/search/getSearchList"
 
@@ -154,10 +155,16 @@ def crawl_ticketlink_all() -> list[dict]:
                         "ai_tags":     ai_tags,
                         "crawled_at":  now_str
                     }
-        except Exception:
-            pass
+        except Exception as e:
+            # 예전에는 pass 였다. 실제로 1차 호출이 타임아웃됐는데 로그 한 줄 없이
+            # 해당 쿼리 결과가 통째로 사라졌다. 실패를 세고 끝에 알린다.
+            failed_queries.append(query)
+            print(f"    [실패] 쿼리 {query!r}: {type(e).__name__}: {e}")
 
     results = list(unique_items.values())
+    if failed_queries:
+        print(f"  [경고] {len(failed_queries)}/{len(SWEEP_PATTERNS)}개 쿼리 실패 "
+              f"→ 수집 결과가 불완전합니다: {failed_queries[:5]}")
     print(f"  [티켓링크 크롤러 v4.0] 총 {len(results)}건 수집 완료!")
     return results
 
@@ -167,6 +174,13 @@ def run_ticketlink_crawler():
     print("=" * 65)
 
     items = crawl_ticketlink_all()
+
+    if not items:
+        # 수집 0건이면 기존 파일을 덮어쓰지 않는다. 예전 구현은 무조건 덮어써서
+        # 네이버·대상 사이트가 일시 차단되면 기존 데이터가 조용히 사라졌다.
+        # 배치(run_web.py)가 실패를 인지하도록 종료 코드 1 을 반환한다.
+        print(f"[실패] 수집 0건 → 기존 파일 보존 (덮어쓰기 안 함): {CSV_PATH}")
+        sys.exit(1)
 
     os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
     with open(CSV_PATH, "w", encoding="utf-8-sig", newline="") as f:
