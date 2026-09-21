@@ -210,23 +210,24 @@ function renderBatchState(bState) {
   const isRunning = bState.is_running;
 
   // 헤더 및 프로그레스 바 갱신
+  const completedCount = steps.filter(s => s.status === 'SUCCESS').length;
   if (statusMsgEl) statusMsgEl.textContent = bState.status_msg || '대기 중';
-  if (percentTxtEl) percentTxtEl.textContent = `${percent}%`;
+  if (percentTxtEl) percentTxtEl.textContent = `${percent}% (${completedCount} / ${steps.length || 18} 완료)`;
   if (fillEl) fillEl.style.width = `${percent}%`;
 
   // 수집 실행 버튼 상태
   if (btn) {
     if (isRunning) {
       btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 통합 수집 파이프라인 진행 중...';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 18단계 수집 파이프라인 진행 중...';
     } else {
       btn.disabled = false;
-      btn.innerHTML = '<i class="fa-solid fa-play"></i> 수집 실행 (전체 배치 구동)';
+      btn.innerHTML = '<i class="fa-solid fa-play"></i> 수집 실행 (전체 18단계 구동)';
     }
   }
 
   // 18개 배치 카드 렌더링
-  grid.innerHTML = steps.map((s) => {
+  grid.innerHTML = steps.map((s, idx) => {
     let badgeClass = 'pending';
     let badgeTxt = '<i class="fa-regular fa-clock"></i> 대기';
     let cardClass = '';
@@ -237,7 +238,7 @@ function renderBatchState(bState) {
       cardClass = 'running';
     } else if (s.status === 'SUCCESS') {
       badgeClass = 'success';
-      badgeTxt = '<i class="fa-solid fa-circle-check"></i> 성공';
+      badgeTxt = '<i class="fa-solid fa-circle-check"></i> 완료';
       cardClass = 'success';
     } else if (s.status === 'ERROR') {
       badgeClass = 'error';
@@ -245,16 +246,25 @@ function renderBatchState(bState) {
       cardClass = 'error';
     }
 
+    const stepNum = String(idx + 1).padStart(2, '0');
+    const cleanTitle = (s.title || '').replace(/^\[배치\s*\d+\]\s*/, '');
+
     return `
       <div class="batch-step-item ${cardClass}">
         <div class="step-top">
-          <span class="step-title">${s.title}</span>
+          <div class="step-title-wrap">
+            <span class="step-num-badge">Step ${stepNum}</span>
+            <span class="step-title">${cleanTitle}</span>
+          </div>
           <span class="batch-badge ${badgeClass}">${badgeTxt}</span>
         </div>
-        <div class="step-desc">${s.desc}</div>
-        <div style="font-size:11px;font-weight:600;color:${s.status==='ERROR'?'#F87171':s.status==='RUNNING'?'#38BDF8':s.status==='SUCCESS'?'#34D399':'#64748B'};margin-top:2px;">
-          ${s.message || ''}
-        </div>
+        <div class="step-desc">${s.desc || ''}</div>
+        <div class="step-script-name"><i class="fa-regular fa-file-code"></i> ${s.name || ''}</div>
+        ${s.message ? `
+          <div class="step-msg ${s.status}">
+            <i class="fa-solid ${s.status === 'ERROR' ? 'fa-triangle-exclamation' : s.status === 'SUCCESS' ? 'fa-check' : 'fa-circle-info'}"></i>
+            ${s.message}
+          </div>` : ''}
       </div>
     `;
   }).join('');

@@ -20,44 +20,28 @@
           <i class="fa-solid fa-database text-indigo"></i>
           주말<span>해</span> <span>Admin</span>
         </h1>
-        <p class="app-subtitle">가족 · 커플 · 싱글매니아 통합 데이터베이스 관리자 패널</p>
+        <p class="app-subtitle">18단계 통합 배치 파이프라인 & 다중 데이터셋(가족·커플·싱글) 관리 센터</p>
       </div>
       <a href="index.html" class="header-back-btn">
         <i class="fa-solid fa-house"></i> 메인 화면
       </a>
     </header>
 
-    <!-- Dataset Switcher (가족 / 커플 / 싱글매니아) -->
-    <div class="dataset-switcher" id="dataset-switcher">
-      <button class="dataset-tab-btn active" data-dataset="family" id="dataset-family-btn">
-        <i class="fa-solid fa-people-roof"></i> 👨‍👩‍👧 가족 (total_family_data)
-      </button>
-      <button class="dataset-tab-btn" data-dataset="couple" id="dataset-couple-btn">
-        <i class="fa-solid fa-heart"></i> 👩‍❤️‍👨 커플 (total_couple_data)
-      </button>
-      <button class="dataset-tab-btn" data-dataset="single" id="dataset-single-btn">
-        <i class="fa-solid fa-headphones"></i> 🎧 싱글매니아 (total_single_data)
-      </button>
-    </div>
-
-    <!-- Stats Grid (선택된 데이터셋에 따라 JS로 동적 갱신) -->
-    <section class="admin-stats-grid" id="admin-stats-grid">
-      <!-- JS로 동적 렌더링 -->
-    </section>
-
-    <!-- ★ 배치 파이프라인 진행상태 제어 패널 ★ -->
+    <!-- ══════════════════════════════════════════
+         SECTION 1: 18단계 배치 파이프라인 관리
+         ══════════════════════════════════════════ -->
     <section class="batch-card" id="batch-panel">
       <div class="batch-header">
         <div>
           <h2 class="batch-title">
             <i class="fa-solid fa-cubes-stacked text-indigo"></i>
-            수집 & 보강 통합 배치 파이프라인 관리 (18단계)
+            18단계 통합 수집 & 보강 배치 파이프라인
           </h2>
-          <p class="batch-subtitle">수집 실행 시 18개의 배치 파이프라인이 순차 실행되어 가족, 커플, 싱글 데이터가 모두 자동 갱신됩니다.</p>
+          <p class="batch-subtitle">수집 실행 시 18개의 배치가 순차 실행되어 가족, 커플, 싱글 데이터가 모두 자동 수집 및 생성됩니다.</p>
         </div>
         <div class="batch-btn-group">
           <button class="action-btn refresh primary" id="admin-run-collect-btn">
-            <i class="fa-solid fa-play"></i> 수집 실행 (전체 배치 구동)
+            <i class="fa-solid fa-play"></i> 수집 실행 (전체 18단계 구동)
           </button>
           <button class="action-btn refresh" id="admin-weather-btn" style="background:#10B981;">
             <i class="fa-solid fa-cloud-sun"></i> 날씨 갱신
@@ -69,55 +53,86 @@
       <div class="batch-progress-box">
         <div class="batch-progress-header">
           <span class="batch-status-msg" id="batch-status-msg">배치 대기 중</span>
-          <span class="batch-percent-txt" id="batch-percent-txt">0%</span>
+          <span class="batch-percent-txt" id="batch-percent-txt">0% (0 / 18)</span>
         </div>
         <div class="batch-progress-track">
           <div class="batch-progress-fill" id="batch-progress-fill" style="width: 0%"></div>
         </div>
       </div>
 
-      <!-- 배치 카드 목록 그리드 -->
+      <!-- 18단계 배치 카드 목록 그리드 -->
       <div class="batch-steps-grid" id="batch-steps-grid">
         <!-- JS로 실시간 렌더링 -->
       </div>
     </section>
 
-    <!-- Table Switcher (JS 동적 렌더링) -->
-    <div class="table-switcher" id="table-switcher">
-      <!-- JS로 동적 렌더링 -->
-    </div>
-
-    <!-- Toolbar -->
-    <div class="table-toolbar">
-      <div class="search-box" style="flex:1">
-        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-        <input type="text" id="admin-search-input" placeholder="장소명, 지역, 설명, 추천이유 검색...">
+    <!-- ══════════════════════════════════════════
+         SECTION 2: 통합 데이터베이스 관리 (가족 / 커플 / 싱글)
+         ══════════════════════════════════════════ -->
+    <section class="data-mgmt-section">
+      <div class="section-title-bar">
+        <h2 class="section-title">
+          <i class="fa-solid fa-table-list text-indigo"></i>
+          통합 데이터베이스 조회 및 관리
+        </h2>
+        <p class="section-subtitle">탭을 선택하여 각 데이터셋별 통계와 실시간 데이터를 확인하세요.</p>
       </div>
-      <button class="action-btn export" id="admin-export-btn">
-        <i class="fa-solid fa-file-csv"></i> CSV 내보내기
-      </button>
-    </div>
 
-    <!-- Table -->
-    <div class="table-responsive-container">
-      <table class="data-table" id="admin-data-table">
-        <thead>
-          <tr id="table-headers">
-            <th>로딩 중...</th>
-          </tr>
-        </thead>
-        <tbody id="table-body">
-          <tr><td>잠시만 기다려주세요.</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <!-- Dataset Switcher (가족 / 커플 / 싱글매니아) -->
+      <div class="dataset-switcher" id="dataset-switcher">
+        <button class="dataset-tab-btn active" data-dataset="family" id="dataset-family-btn">
+          <i class="fa-solid fa-people-roof"></i> 👨‍👩‍👧 가족 데이터
+        </button>
+        <button class="dataset-tab-btn" data-dataset="couple" id="dataset-couple-btn">
+          <i class="fa-solid fa-heart"></i> 👩‍❤️‍👨 커플 데이터
+        </button>
+        <button class="dataset-tab-btn" data-dataset="single" id="dataset-single-btn">
+          <i class="fa-solid fa-headphones"></i> 🎧 싱글매니아 데이터
+        </button>
+      </div>
 
-    <!-- Pagination -->
-    <div class="admin-pagination">
-      <button class="admin-page-btn" id="admin-page-prev"><i class="fa-solid fa-chevron-left"></i></button>
-      <span class="admin-page-info" id="admin-page-info">1 / 1</span>
-      <button class="admin-page-btn" id="admin-page-next"><i class="fa-solid fa-chevron-right"></i></button>
-    </div>
+      <!-- Stats Grid (선택된 데이터셋에 따라 JS로 동적 갱신) -->
+      <section class="admin-stats-grid" id="admin-stats-grid">
+        <!-- JS로 동적 렌더링 -->
+      </section>
+
+      <!-- Table Switcher (카테고리 탭, JS 동적 렌더링) -->
+      <div class="table-switcher" id="table-switcher">
+        <!-- JS로 동적 렌더링 -->
+      </div>
+
+      <!-- Toolbar -->
+      <div class="table-toolbar">
+        <div class="search-box" style="flex:1">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input type="text" id="admin-search-input" placeholder="장소명, 지역, 설명, 추천이유 검색...">
+        </div>
+        <button class="action-btn export" id="admin-export-btn">
+          <i class="fa-solid fa-file-csv"></i> CSV 내보내기
+        </button>
+      </div>
+
+      <!-- Table -->
+      <div class="table-responsive-container">
+        <table class="data-table" id="admin-data-table">
+          <thead>
+            <tr id="table-headers">
+              <th>로딩 중...</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td>잠시만 기다려주세요.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="admin-pagination">
+        <button class="admin-page-btn" id="admin-page-prev"><i class="fa-solid fa-chevron-left"></i></button>
+        <span class="admin-page-info" id="admin-page-info">1 / 1</span>
+        <button class="admin-page-btn" id="admin-page-next"><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+    </section>
 
     <!-- Detail Modal -->
     <div class="modal" id="details-modal">
