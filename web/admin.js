@@ -1,16 +1,91 @@
-/* ══════════════════════════════
-   주말해 Admin JavaScript v3.0
-   7단계 배치 파이프라인 & total_family_data.csv 기반
-   ══════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   주말해 Admin JavaScript v4.0
+   통합 배치 파이프라인 (18단계) & 다중 데이터셋 (가족/커플/싱글) 지원
+   ══════════════════════════════════════════════════════════════ */
 
-let allData       = [];
-let filteredData  = [];
-let currentTable  = 'all';
-let currentPage   = 1;
-const PAGE_SIZE   = 25;
-let sortCol       = null;
-let sortAsc       = true;
-let pollInterval  = null;
+let currentDataset = 'family'; // 'family' | 'couple' | 'single'
+let allData        = [];
+let filteredData   = [];
+let currentTable   = 'all';
+let currentPage    = 1;
+const PAGE_SIZE    = 25;
+let sortCol        = null;
+let sortAsc        = true;
+let pollInterval   = null;
+
+// ── 데이터셋 메타 구성 ──────────────────────────────────────────
+const DATASET_CONFIG = {
+  family: {
+    id: 'family',
+    name: '가족',
+    file: '../data/total_family_data.csv',
+    categories: [
+      { id: 'all', label: '전체 DB', icon: 'fa-table' },
+      { id: '공공키즈카페', label: '공공키즈카페', icon: 'fa-landmark' },
+      { id: '사설키즈카페', label: '사설키즈카페', icon: 'fa-house-chimney' },
+      { id: '자연친화', label: '자연친화', icon: 'fa-leaf' },
+      { id: '문화생활', label: '문화생활', icon: 'fa-masks-theater' },
+      { id: '가족체험', label: '가족체험', icon: 'fa-bullseye' },
+    ],
+    stats: [
+      { label: '총 데이터 건수', icon: 'fa-database', color: '#60A5FA', filter: () => true },
+      { label: '공공키즈카페', icon: 'fa-landmark', color: '#8B5CF6', filter: r => r.category === '공공키즈카페' },
+      { label: '사설키즈카페', icon: 'fa-house-chimney', color: '#22D3EE', filter: r => r.category === '사설키즈카페' || r.category === '키즈카페' },
+      { label: '자연친화', icon: 'fa-leaf', color: '#4ADE80', filter: r => r.category === '자연친화' },
+      { label: '문화생활', icon: 'fa-masks-theater', color: '#C084FC', filter: r => r.category === '문화생활' },
+      { label: '가족체험', icon: 'fa-bullseye', color: '#FB923C', filter: r => r.category === '가족체험' },
+      { label: '예매 가능', icon: 'fa-ticket', color: '#34D399', filter: r => r.booking_url && r.booking_url.startsWith('http') }
+    ]
+  },
+  couple: {
+    id: 'couple',
+    name: '커플',
+    file: '../data/total_couple_data.csv',
+    categories: [
+      { id: 'all', label: '전체 DB', icon: 'fa-table' },
+      { id: '전시/미술관', label: '전시/미술관', icon: 'fa-palette' },
+      { id: '감성카페', label: '감성카페', icon: 'fa-mug-saucer' },
+      { id: '야경/드라이브', label: '야경/드라이브', icon: 'fa-moon' },
+      { id: '액티비티', label: '액티비티', icon: 'fa-bolt' },
+      { id: '힐링/스파', label: '힐링/스파', icon: 'fa-spa' },
+      { id: '공연/뮤지컬', label: '공연/뮤지컬', icon: 'fa-music' },
+      { id: '데이트맛집', label: '데이트맛집', icon: 'fa-utensils' },
+      { id: '테마파크', label: '테마파크', icon: 'fa-icons' },
+    ],
+    stats: [
+      { label: '총 데이터 건수', icon: 'fa-database', color: '#60A5FA', filter: () => true },
+      { label: '전시/미술관', icon: 'fa-palette', color: '#C084FC', filter: r => (r.category || '').includes('전시') || (r.category || '').includes('미술관') },
+      { label: '감성카페', icon: 'fa-mug-saucer', color: '#FB923C', filter: r => (r.category || '').includes('카페') },
+      { label: '야경/드라이브', icon: 'fa-moon', color: '#818CF8', filter: r => (r.category || '').includes('야경') || (r.category || '').includes('드라이브') },
+      { label: '액티비티/체험', icon: 'fa-bolt', color: '#F43F5E', filter: r => (r.category || '').includes('액티비티') || (r.category || '').includes('체험') || (r.category || '').includes('테마파크') },
+      { label: '공연/문화', icon: 'fa-music', color: '#A78BFA', filter: r => (r.category || '').includes('공연') || (r.category || '').includes('뮤지컬') || (r.category || '').includes('연극') || (r.category || '').includes('음악') || (r.category || '').includes('무용') },
+      { label: '예매 가능', icon: 'fa-ticket', color: '#34D399', filter: r => r.booking_url && r.booking_url.startsWith('http') }
+    ]
+  },
+  single: {
+    id: 'single',
+    name: '싱글매니아',
+    file: '../data/total_single_data.csv',
+    categories: [
+      { id: 'all', label: '전체 DB', icon: 'fa-table' },
+      { id: '전시·미술관', label: '전시·미술관', icon: 'fa-palette' },
+      { id: '독립서점·북카페', label: '독립서점·북카페', icon: 'fa-book-open' },
+      { id: '콘서트·공연', label: '콘서트·공연', icon: 'fa-music' },
+      { id: '조용한 힐링', label: '조용한 힐링', icon: 'fa-spa' },
+      { id: '역사·문화', label: '역사·문화', icon: 'fa-landmark' },
+      { id: '자연·공원', label: '자연·공원', icon: 'fa-tree' },
+    ],
+    stats: [
+      { label: '총 데이터 건수', icon: 'fa-database', color: '#60A5FA', filter: () => true },
+      { label: '전시·미술관', icon: 'fa-palette', color: '#C084FC', filter: r => (r.category || '').includes('전시') || (r.category || '').includes('미술') },
+      { label: '독립서점·북카페', icon: 'fa-book-open', color: '#22D3EE', filter: r => (r.category || '').includes('서점') || (r.category || '').includes('북카페') },
+      { label: '콘서트·공연', icon: 'fa-music', color: '#F43F5E', filter: r => (r.category || '').includes('콘서트') || (r.category || '').includes('공연') },
+      { label: '조용한 힐링', icon: 'fa-spa', color: '#4ADE80', filter: r => (r.category || '').includes('힐링') },
+      { label: '역사·문화/자연', icon: 'fa-tree', color: '#FBBF24', filter: r => (r.category || '').includes('역사') || (r.category || '').includes('문화') || (r.category || '').includes('자연') || (r.category || '').includes('공원') },
+      { label: '예매 가능', icon: 'fa-ticket', color: '#34D399', filter: r => r.booking_url && r.booking_url.startsWith('http') }
+    ]
+  }
+};
 
 // ── CSV 파싱 ────────────────────────────────────────
 function parseCSV(text) {
@@ -39,34 +114,73 @@ function splitCSVLine(line) {
 
 // ── 데이터 로드 ──────────────────────────────────────
 async function loadData() {
+  const cfg = DATASET_CONFIG[currentDataset];
   try {
-    const res = await fetch('../data/total_family_data.csv?t=' + Date.now());
+    const res = await fetch(`${cfg.file}?t=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
-    const { headers, rows } = parseCSV(text);
+    const { rows } = parseCSV(text);
     allData = rows;
     filteredData = rows;
 
-    updateStats(rows);
+    renderStats(rows);
+    renderCategorySwitcher();
     applyFilter();
   } catch (err) {
-    console.error('데이터 로드 실패:', err);
+    console.error(`데이터 로드 실패 (${currentDataset}):`, err);
     document.getElementById('table-body').innerHTML =
-      `<tr><td colspan="5" style="color:#F87171;text-align:center;padding:24px;">데이터 로드 실패: ${err.message}</td></tr>`;
+      `<tr><td colspan="9" style="color:#F87171;text-align:center;padding:24px;">데이터 로드 실패 (${cfg.name}): ${err.message}</td></tr>`;
   }
 }
 
-// ── 통계 업데이트 ─────────────────────────────────────
-function updateStats(rows) {
-  if (document.getElementById('admin-total-count')) document.getElementById('admin-total-count').textContent = rows.length.toLocaleString();
-  if (document.getElementById('admin-public-kids-count')) document.getElementById('admin-public-kids-count').textContent = rows.filter(r => r.category === '공공키즈카페').length.toLocaleString();
-  if (document.getElementById('admin-private-kids-count')) document.getElementById('admin-private-kids-count').textContent = rows.filter(r => r.category === '사설키즈카페' || r.category === '키즈카페').length.toLocaleString();
-  if (document.getElementById('admin-nature-count')) document.getElementById('admin-nature-count').textContent = rows.filter(r => r.category === '자연친화').length.toLocaleString();
-  if (document.getElementById('admin-culture-count')) document.getElementById('admin-culture-count').textContent = rows.filter(r => r.category === '문화생활').length.toLocaleString();
-  if (document.getElementById('admin-experience-count')) document.getElementById('admin-experience-count').textContent = rows.filter(r => r.category === '가족체험').length.toLocaleString();
-  if (document.getElementById('admin-ticket-count')) document.getElementById('admin-ticket-count').textContent = rows.filter(r => r.booking_url && r.booking_url.startsWith('http')).length.toLocaleString();
+// ── 통계 카드 동적 렌더링 ─────────────────────────────
+function renderStats(rows) {
+  const grid = document.getElementById('admin-stats-grid');
+  if (!grid) return;
+  const cfg = DATASET_CONFIG[currentDataset];
+  
+  grid.innerHTML = cfg.stats.map(stat => {
+    const count = rows.filter(stat.filter).length;
+    return `
+      <div class="stat-box" style="border-left: 3px solid ${stat.color};">
+        <div class="stat-icon" style="color: ${stat.color};"><i class="fa-solid ${stat.icon}"></i></div>
+        <div class="stat-info">
+          <span class="stat-val">${count.toLocaleString()}</span>
+          <span class="stat-lbl">${stat.label}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
-// ── 7단계 배치 상태 렌더링 ─────────────────────────────
+// ── 카테고리 스위처 동적 렌더링 ─────────────────────────
+function renderCategorySwitcher() {
+  const switcher = document.getElementById('table-switcher');
+  if (!switcher) return;
+  const cfg = DATASET_CONFIG[currentDataset];
+
+  switcher.innerHTML = cfg.categories.map(cat => {
+    const isActive = currentTable === cat.id ? 'active' : '';
+    return `
+      <button class="switcher-btn ${isActive}" data-table="${cat.id}">
+        <i class="fa-solid ${cat.icon}"></i> ${cat.label}
+      </button>
+    `;
+  }).join('');
+
+  // 클릭 이벤트 바인딩
+  switcher.querySelectorAll('.switcher-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      switcher.querySelectorAll('.switcher-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTable = btn.dataset.table;
+      sortCol = null;
+      applyFilter();
+    });
+  });
+}
+
+// ── 18단계 배치 상태 렌더링 ─────────────────────────────
 async function checkBatchStatus() {
   try {
     const res = await fetch('/api/batch_status');
@@ -104,14 +218,14 @@ function renderBatchState(bState) {
   if (btn) {
     if (isRunning) {
       btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 수집 파이프라인 진행 중...';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 통합 수집 파이프라인 진행 중...';
     } else {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-play"></i> 수집 실행 (전체 배치 구동)';
     }
   }
 
-  // 7개 배치 카드 렌더링
+  // 18개 배치 카드 렌더링
   grid.innerHTML = steps.map((s) => {
     let badgeClass = 'pending';
     let badgeTxt = '<i class="fa-regular fa-clock"></i> 대기';
@@ -160,8 +274,8 @@ function startBatchPolling() {
         if (!bState.is_running && bState.overall_progress === 100) {
           clearInterval(pollInterval);
           pollInterval = null;
-          alert('완료되었습니다.');
-          loadData(); // 테이블 데이터 리로드
+          alert('가족, 커플, 싱글 전체 데이터 수집 및 갱신이 완료되었습니다!');
+          loadData(); // 현재 보고 있는 데이터셋 테이블 리로드
         } else if (!bState.is_running && bState.status_msg.includes('오류')) {
           clearInterval(pollInterval);
           pollInterval = null;
@@ -179,18 +293,30 @@ function startBatchPolling() {
 function applyFilter() {
   const query = (document.getElementById('admin-search-input')?.value || '').toLowerCase().trim();
 
-  let rows = currentTable === 'all' ? [...allData] : allData.filter(r => r.category === currentTable);
+  let rows = [...allData];
 
+  // 카테고리 필터
+  if (currentTable !== 'all') {
+    rows = rows.filter(r => {
+      const cat = r.category || '';
+      const theme = r.theme_ids || '';
+      return cat === currentTable || cat.includes(currentTable) || theme.includes(currentTable);
+    });
+  }
+
+  // 검색어 필터
   if (query) {
     rows = rows.filter(r =>
       (r.place_or_event_name || '').toLowerCase().includes(query) ||
       (r.region || '').toLowerCase().includes(query) ||
       (r.description || '').toLowerCase().includes(query) ||
       (r.recommend_reason || '').toLowerCase().includes(query) ||
-      (r.source_site || '').toLowerCase().includes(query)
+      (r.source_site || '').toLowerCase().includes(query) ||
+      (r.category || '').toLowerCase().includes(query)
     );
   }
 
+  // 정렬
   if (sortCol) {
     rows.sort((a, b) => {
       const va = a[sortCol] || '';
@@ -207,6 +333,24 @@ function applyFilter() {
   renderTable();
 }
 
+// ── 카테고리 뱃지 헬퍼 ──────────────────────────────
+function getCategoryBadge(cat) {
+  if (!cat) return '-';
+  if (cat.includes('공공키즈')) return `<span class="cat-badge public">🏛️ ${cat}</span>`;
+  if (cat.includes('키즈')) return `<span class="cat-badge kids">🏠 ${cat}</span>`;
+  if (cat.includes('자연') || cat.includes('공원')) return `<span class="cat-badge nature">🌿 ${cat}</span>`;
+  if (cat.includes('문화') || cat.includes('역사')) return `<span class="cat-badge culture">🎭 ${cat}</span>`;
+  if (cat.includes('체험') || cat.includes('액티비티')) return `<span class="cat-badge experience">🎯 ${cat}</span>`;
+  if (cat.includes('서점') || cat.includes('북카페')) return `<span class="cat-badge public" style="background:rgba(34,211,238,0.15);color:#22D3EE;">📚 ${cat}</span>`;
+  if (cat.includes('공연') || cat.includes('콘서트') || cat.includes('뮤지컬') || cat.includes('연극') || cat.includes('음악')) return `<span class="cat-badge culture" style="background:rgba(244,63,94,0.15);color:#F43F5E;">🎵 ${cat}</span>`;
+  if (cat.includes('전시') || cat.includes('미술')) return `<span class="cat-badge culture">🖼️ ${cat}</span>`;
+  if (cat.includes('카페')) return `<span class="cat-badge experience">☕ ${cat}</span>`;
+  if (cat.includes('맛집')) return `<span class="cat-badge nature" style="background:rgba(251,191,36,0.15);color:#FBBF24;">🍽️ ${cat}</span>`;
+  if (cat.includes('야경') || cat.includes('드라이브')) return `<span class="cat-badge public" style="background:rgba(129,140,248,0.15);color:#818CF8;">🌙 ${cat}</span>`;
+  if (cat.includes('힐링') || cat.includes('스파')) return `<span class="cat-badge nature">🌿 ${cat}</span>`;
+  return `<span class="cat-badge public">${cat}</span>`;
+}
+
 // ── 테이블 렌더링 ─────────────────────────────────────
 function renderTable() {
   const thead = document.getElementById('table-headers');
@@ -214,15 +358,15 @@ function renderTable() {
   const pageInfo = document.getElementById('admin-page-info');
 
   const COLS = [
-    { key: 'category',            label: '카테고리',   width: '90px' },
-    { key: 'place_or_event_name', label: '장소/행사명',  width: '170px' },
-    { key: 'target_age',          label: '대상연령',   width: '110px' },
-    { key: 'region',              label: '지역',        width: '120px' },
-    { key: 'fee_info',            label: '요금',        width: '100px' },
-    { key: 'recommend_reason',    label: 'LLM 추천이유', width: '220px' },
-    { key: 'popularity_score',    label: '인기도',      width: '75px' },
-    { key: 'congestion_score',    label: '혼잡도',      width: '65px' },
-    { key: 'booking_url',         label: '예매URL',     width: '80px' },
+    { key: 'category',            label: '카테고리',     width: '100px' },
+    { key: 'place_or_event_name', label: '장소/행사명',   width: '170px' },
+    { key: 'target_age',          label: '대상/기간',     width: '110px' },
+    { key: 'region',              label: '지역',          width: '120px' },
+    { key: 'fee_info',            label: '요금',          width: '100px' },
+    { key: 'recommend_reason',    label: '추천이유 / 설명', width: '220px' },
+    { key: 'popularity_score',    label: '인기도',        width: '75px' },
+    { key: 'congestion_score',    label: '혼잡도',        width: '65px' },
+    { key: 'booking_url',         label: '예매URL',       width: '80px' },
   ];
 
   thead.innerHTML = COLS.map(col => {
@@ -253,19 +397,11 @@ function renderTable() {
     return;
   }
 
-  const catBadge = {
-    '공공키즈카페': '<span class="cat-badge public">🏛️ 공공키즈</span>',
-    '사설키즈카페': '<span class="cat-badge kids">🏠 사설키즈</span>',
-    '키즈카페':     '<span class="cat-badge kids">🏠 사설키즈</span>',
-    '자연친화':     '<span class="cat-badge nature">🌿 자연친화</span>',
-    '문화생활':     '<span class="cat-badge culture">🎭 문화생활</span>',
-    '가족체험':     '<span class="cat-badge experience">🎯 가족체험</span>',
-  };
-
   tbody.innerHTML = paged.map(row => {
     const regionShort = (row.region || '').split('|')[0].trim().substring(0, 16);
     const recReason   = (row.recommend_reason || row.description || '').substring(0, 50);
     const feeShort    = (row.fee_info || '').substring(0, 14);
+    const targetInfo  = row.target_age || row.period || row.origin || '전체';
 
     const pop = parseFloat(row.popularity_score) || 0;
     const popBar = `
@@ -285,9 +421,9 @@ function renderTable() {
       : '<span style="color:#475569">-</span>';
 
     return `<tr>
-      <td>${catBadge[row.category] || row.category || '-'}</td>
+      <td>${getCategoryBadge(row.category)}</td>
       <td class="name-cell" title="${row.place_or_event_name || ''}">${row.place_or_event_name || '-'}</td>
-      <td style="font-size:11px;color:#94A3B8">${row.target_age || '전체'}</td>
+      <td style="font-size:11px;color:#94A3B8" title="${targetInfo}">${targetInfo}</td>
       <td title="${row.region || ''}">${regionShort}</td>
       <td style="font-size:11px">${feeShort || '-'}</td>
       <td class="desc-cell" style="cursor:pointer" data-desc="${encodeURIComponent(row.description || '')}" data-reason="${encodeURIComponent(row.recommend_reason || '')}" data-name="${encodeURIComponent(row.place_or_event_name || '')}">
@@ -307,9 +443,7 @@ function renderTable() {
       const reason = decodeURIComponent(td.dataset.reason);
       document.getElementById('details-modal-title').textContent = name;
       document.getElementById('details-modal-desc').innerHTML = `
-        <div style="margin-bottom:12px;padding:10px;background:rgba(56,189,248,0.1);border-radius:8px;color:#38BDF8;font-weight:700;">
-          ${reason}
-        </div>
+        ${reason ? `<div style="margin-bottom:12px;padding:10px;background:rgba(56,189,248,0.1);border-radius:8px;color:#38BDF8;font-weight:700;">${reason}</div>` : ''}
         <div>${desc || '상세 설명 없음'}</div>
       `;
       document.getElementById('details-modal').classList.add('open');
@@ -335,24 +469,26 @@ function exportCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `total_family_data_${currentTable}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `total_${currentDataset}_data_${currentTable}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 // ── 이벤트 ──────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // 데이터 로드 & 배치 상태 초기화
   loadData();
   checkBatchStatus();
 
-  // 테이블 스위처
-  document.querySelectorAll('.switcher-btn').forEach(btn => {
+  // 데이터셋 선택기 (가족 / 커플 / 싱글)
+  document.querySelectorAll('.dataset-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.switcher-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.dataset-tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      currentTable = btn.dataset.table;
+      currentDataset = btn.dataset.dataset;
+      currentTable = 'all';
       sortCol = null;
-      applyFilter();
+      loadData();
     });
   });
 
@@ -381,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // CSV 내보내기
   document.getElementById('admin-export-btn')?.addEventListener('click', exportCSV);
 
-  // 수집 실행 (7단계 전체 배치 파이프라인 시작)
+  // 수집 실행 (18단계 전체 배치 파이프라인 시작)
   document.getElementById('admin-run-collect-btn')?.addEventListener('click', async () => {
     try {
       const res = await fetch('/api/refresh', { method: 'POST' });

@@ -20,64 +20,29 @@
           <i class="fa-solid fa-database text-indigo"></i>
           주말<span>해</span> <span>Admin</span>
         </h1>
-        <p class="app-subtitle">total_family_data.csv 통합 데이터베이스 관리자 패널</p>
+        <p class="app-subtitle">가족 · 커플 · 싱글매니아 통합 데이터베이스 관리자 패널</p>
       </div>
       <a href="index.html" class="header-back-btn">
         <i class="fa-solid fa-house"></i> 메인 화면
       </a>
     </header>
 
-    <!-- Stats Grid (7개) -->
+    <!-- Dataset Switcher (가족 / 커플 / 싱글매니아) -->
+    <div class="dataset-switcher" id="dataset-switcher">
+      <button class="dataset-tab-btn active" data-dataset="family" id="dataset-family-btn">
+        <i class="fa-solid fa-people-roof"></i> 👨‍👩‍👧 가족 (total_family_data)
+      </button>
+      <button class="dataset-tab-btn" data-dataset="couple" id="dataset-couple-btn">
+        <i class="fa-solid fa-heart"></i> 👩‍❤️‍👨 커플 (total_couple_data)
+      </button>
+      <button class="dataset-tab-btn" data-dataset="single" id="dataset-single-btn">
+        <i class="fa-solid fa-headphones"></i> 🎧 싱글매니아 (total_single_data)
+      </button>
+    </div>
+
+    <!-- Stats Grid (선택된 데이터셋에 따라 JS로 동적 갱신) -->
     <section class="admin-stats-grid" id="admin-stats-grid">
-      <div class="stat-box">
-        <div class="stat-icon"><i class="fa-solid fa-database"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-total-count">0</span>
-          <span class="stat-lbl">총 데이터 건수</span>
-        </div>
-      </div>
-      <div class="stat-box kids" style="border-left: 3px solid #8B5CF6;">
-        <div class="stat-icon" style="color:#8B5CF6"><i class="fa-solid fa-landmark"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-public-kids-count">0</span>
-          <span class="stat-lbl">공공키즈카페</span>
-        </div>
-      </div>
-      <div class="stat-box kids">
-        <div class="stat-icon"><i class="fa-solid fa-house-chimney"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-private-kids-count">0</span>
-          <span class="stat-lbl">사설키즈카페</span>
-        </div>
-      </div>
-      <div class="stat-box nature">
-        <div class="stat-icon"><i class="fa-solid fa-leaf"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-nature-count">0</span>
-          <span class="stat-lbl">자연친화</span>
-        </div>
-      </div>
-      <div class="stat-box culture">
-        <div class="stat-icon"><i class="fa-solid fa-masks-theater"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-culture-count">0</span>
-          <span class="stat-lbl">문화생활</span>
-        </div>
-      </div>
-      <div class="stat-box experience">
-        <div class="stat-icon"><i class="fa-solid fa-bullseye"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-experience-count">0</span>
-          <span class="stat-lbl">가족체험</span>
-        </div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-icon" style="color:#34D399"><i class="fa-solid fa-ticket"></i></div>
-        <div class="stat-info">
-          <span class="stat-val" id="admin-ticket-count">0</span>
-          <span class="stat-lbl">예매 가능</span>
-        </div>
-      </div>
+      <!-- JS로 동적 렌더링 -->
     </section>
 
     <!-- ★ 배치 파이프라인 진행상태 제어 패널 ★ -->
@@ -86,9 +51,9 @@
         <div>
           <h2 class="batch-title">
             <i class="fa-solid fa-cubes-stacked text-indigo"></i>
-            수집 & 보강 배치 파이프라인 관리 (7단계)
+            수집 & 보강 통합 배치 파이프라인 관리 (18단계)
           </h2>
-          <p class="batch-subtitle">수집 실행 시 7개의 배치 파이프라인이 순차적으로 실행되며 상태와 진행률이 실시간 갱신됩니다.</p>
+          <p class="batch-subtitle">수집 실행 시 18개의 배치 파이프라인이 순차 실행되어 가족, 커플, 싱글 데이터가 모두 자동 갱신됩니다.</p>
         </div>
         <div class="batch-btn-group">
           <button class="action-btn refresh primary" id="admin-run-collect-btn">
@@ -111,32 +76,15 @@
         </div>
       </div>
 
-      <!-- 7단계 배치 카드 목록 그리드 -->
+      <!-- 배치 카드 목록 그리드 -->
       <div class="batch-steps-grid" id="batch-steps-grid">
         <!-- JS로 실시간 렌더링 -->
       </div>
     </section>
 
-    <!-- Table Switcher -->
-    <div class="table-switcher">
-      <button class="switcher-btn active" data-table="all" id="switcher-all">
-        <i class="fa-solid fa-table"></i> 전체 DB
-      </button>
-      <button class="switcher-btn" data-table="공공키즈카페" id="switcher-public-kids">
-        <i class="fa-solid fa-landmark"></i> 공공키즈카페
-      </button>
-      <button class="switcher-btn" data-table="사설키즈카페" id="switcher-private-kids">
-        <i class="fa-solid fa-house-chimney"></i> 사설키즈카페
-      </button>
-      <button class="switcher-btn" data-table="자연친화" id="switcher-nature">
-        <i class="fa-solid fa-leaf"></i> 자연친화
-      </button>
-      <button class="switcher-btn" data-table="문화생활" id="switcher-culture">
-        <i class="fa-solid fa-masks-theater"></i> 문화생활
-      </button>
-      <button class="switcher-btn" data-table="가족체험" id="switcher-exp">
-        <i class="fa-solid fa-bullseye"></i> 가족체험
-      </button>
+    <!-- Table Switcher (JS 동적 렌더링) -->
+    <div class="table-switcher" id="table-switcher">
+      <!-- JS로 동적 렌더링 -->
     </div>
 
     <!-- Toolbar -->

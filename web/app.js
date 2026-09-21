@@ -24,14 +24,6 @@ const THEMES = {
     { id: 'culture',   label: '🏯 역사·문화',       emoji: '🏯', bannerSub: '깊이 있게',      bannerTitle: '역사·문화',    color: 'purple' },
     { id: 'nature',    label: '🌳 자연·공원',       emoji: '🌳', bannerSub: '혼자 걷기 좋은', bannerTitle: '자연·공원',    color: 'purple' },
   ],
-  food: [
-    { id: 'food_near',   label: '📍 내 주변 맛집',   emoji: '📍', bannerSub: '지금 내 위치 근처', bannerTitle: '내 주변 맛집', color: 'food' },
-    { id: 'food_korean', label: '🍲 한식',           emoji: '🍲', bannerSub: '따뜻한 한 끼',     bannerTitle: '한식 맛집',    color: 'food' },
-    { id: 'food_western',label: '🍝 양식·이탈리안',  emoji: '🍝', bannerSub: '유럽 감성 한 상',  bannerTitle: '양식 맛집',    color: 'food' },
-    { id: 'food_japanese',label: '🍣 일식',          emoji: '🍣', bannerSub: '오마카세부터 분식까지', bannerTitle: '일식 맛집', color: 'food' },
-    { id: 'food_cafe',   label: '☕ 카페·디저트',    emoji: '☕', bannerSub: '달콤한 휴식',      bannerTitle: '카페·디저트',  color: 'food' },
-    { id: 'food_hidden', label: '🕵️ 숨은 맛집',     emoji: '🕵️', bannerSub: '아는 사람만 아는', bannerTitle: '숨은 맛집',    color: 'food' },
-  ],
 };
 
 // 5카테고리 이모지 & 색상
@@ -49,7 +41,8 @@ const CROWD_LABEL = { LOW: '여유', MODERATE: '보통', CONGESTED: '혼잡', VE
 
 // ── 전역 상태 ────────────────────────────────────────
 let familyData    = [];  // total_family_data.csv 로드 결과
-let mergedData    = [];  // 기존 places+events 병합 (커플/싱글/맛집용 폴백)
+let singleData    = [];  // total_single_data.csv 로드 결과 (싱글매니아 탭 전용)
+let mergedData    = [];  // 기존 places+events 병합 (맛집용 폴백)
 let coupleData    = [];  // total_couple_data.csv (커플 탭 전용)
 let placesData    = [];
 let eventsData    = [];
@@ -179,9 +172,10 @@ function updateGeoBtnState(active) {
 }
 
 // ── RecommendScore 계산 ──────────────────────────────
-function calcRecommendScore(item) {
-  // 1) family score (0~1)
-  const familyScore = parseFamilyScore(item.ai_tags);
+// scoreType: 'family' (기본) 또는 'single'
+function calcRecommendScore(item, scoreType = 'family') {
+  // 1) 기본 점수 — scoreType 에 따라 family 또는 single ai_tags 값 사용
+  const baseScore = parseScoreByKey(item.ai_tags, scoreType);
 
   // 2) popularity (0~100 → 0~2)
   const popScore = ((parseFloat(item.popularity_score) || 50) / 100) * 2.0;
@@ -214,8 +208,6 @@ function calcRecommendScore(item) {
   }
 
   // 5) congestion penalty — 서울시 실시간 관측값이 있을 때만 적용한다.
-  //    예전에는 congestion_score(전 건 공란) || 1 이라 모든 항목에 같은
-  //    감점이 붙어 아무 역할도 하지 않았다. 측정값이 없으면 감점 없음.
   const congOrder = congestOrderOf(item);
   const penalty = congOrder === null ? 0 : congOrder * 0.2;
 
@@ -225,13 +217,18 @@ function calcRecommendScore(item) {
   // 7) instagram hot bonus
   const instaBonus = /Instagram 핫플/.test(item.source_site || '') ? 0.3 : 0;
 
-  return (familyScore * 3.0) + popScore + freshness + distBonus - penalty + freeBonus + instaBonus;
+  return (baseScore * 3.0) + popScore + freshness + distBonus - penalty + freeBonus + instaBonus;
+}
+
+// ai_tags 에서 특정 키 점수 파싱 (예: 'family', 'single', 'couple')
+function parseScoreByKey(aiTags, key) {
+  if (!aiTags) return 0.1;
+  const m = String(aiTags).match(new RegExp(key + ':([\\d.]+)'));
+  return m ? parseFloat(m[1]) : 0.1;
 }
 
 function parseFamilyScore(aiTags) {
-  if (!aiTags) return 0.1;
-  const m = String(aiTags).match(/family:([\d.]+)/);
-  return m ? parseFloat(m[1]) : 0.1;
+  return parseScoreByKey(aiTags, 'family');
 }
 
 // ── 초기화 ───────────────────────────────────────────
@@ -306,6 +303,12 @@ async function loadData() {
       const cpRes = await fetch('../data/total_couple_data.csv?t=' + Date.now());
       if (cpRes.ok) coupleData = parseCSV(await cpRes.text());
     } catch (e) { console.warn('커플 데이터 로드 스킵:', e); }
+
+    // 2-3. 싱글매니아 통합 데이터 (싱글 탭 전용). 없으면 조용히 건너뛴다.
+    try {
+      const singleRes = await fetch('../data/total_single_data.csv?t=' + Date.now());
+      if (singleRes.ok) singleData = parseCSV(await singleRes.text());
+    } catch (e) { console.warn('싱글 데이터 로드 스킵:', e); }
 
     // 3) 주간 날씨 로드
     try {
@@ -504,37 +507,48 @@ function renderList() {
 
       list = applySortCouple(list);
     }
-  } else {
-    // 커플/싱글: 기존 mergedData 사용
-    const scoreKey = currentSeg === 'couple' ? 'couple' : 'single';
-    list = [...mergedData];
-    // 측정값이 없는 항목(UNKNOWN)은 걸러내지 않는다 — 혼잡하다는 근거가 없다.
-    if (currentSeg === 'couple') list = list.filter(p => p.crowd !== 'VERY_CONGESTED');
-    const themes = THEMES[currentSeg];
-    const theme = themes[currentThemeIdx];
-    if (theme) {
-      const THEME_FILTER = {
-        popup:        ['팝업스토어', '복합문화공간'],
-        concert:      ['팝업스토어', '복합문화공간', '미술관/전시'],
-        nightview:    ['공원/야외', '문화유산/역사'],
-        cafe:         ['카페/식음', '팝업스토어'],
-        exhibition:   ['미술관/전시', '박물관/전시', '문화유산/역사'],
-        bookstore:    ['도서/문화'],
-        culture:      ['문화유산/역사', '박물관/전시'],
-        healing:      ['공원/야외', '도서/문화', '박물관/전시'],
-        nature:       ['공원/야외'],
-        summer:       ['공원/야외', '테마파크'],
-      };
-      const allowedCats = THEME_FILTER[theme.id] || [];
-      if (allowedCats.length) {
-        const filtered = list.filter(p => allowedCats.some(cat => p.category && p.category.includes(cat.replace('/야외','').replace('/전시',''))));
-        if (filtered.length >= 2) list = filtered;
-      }
+  } else if (currentSeg === 'single') {
+    // 싱글매니아 탭: total_single_data.csv 전용 (없으면 빈 화면)
+    list = [...singleData];
+
+    // 테마 필터 — THEMES.single의 theme.id → 카테고리명 매핑
+    const SINGLE_THEME_CAT = {
+      exhibition: '전시·미술관',
+      bookstore:  '독립서점',
+      concert:    '콘서트·공연',
+      healing:    '조용한힐링',
+      culture:    '역사·문화',
+      nature:     '자연·공원',
+    };
+    const singleTheme = THEMES.single[currentThemeIdx];
+    if (singleTheme && SINGLE_THEME_CAT[singleTheme.id]) {
+      const filtered = list.filter(item => item.category === SINGLE_THEME_CAT[singleTheme.id]);
+      if (filtered.length) list = filtered;
     }
-    list.sort((a, b) => b.scores[scoreKey] - a.scores[scoreKey]);
+
+    // 검색 필터
     if (query) {
-      list = list.filter(p => (p.name || '').toLowerCase().includes(query) || (p.address || '').toLowerCase().includes(query) || p.tags.some(t => t.toLowerCase().includes(query)));
+      list = list.filter(item =>
+        (item.place_or_event_name || '').toLowerCase().includes(query) ||
+        (item.region || '').toLowerCase().includes(query) ||
+        (item.description || '').toLowerCase().includes(query) ||
+        (item.ai_tags || '').toLowerCase().includes(query)
+      );
     }
+
+    // 거리 계산
+    list = list.map(item => {
+      const { lat, lon } = parseLatLon(item.region);
+      return { ...item, _lat: lat, _lon: lon,
+               _dist: calcDistance(userLat, userLon, lat, lon) };
+    });
+
+    // 정렬 (family와 같은 로직, 단 single 점수 기준 추천순)
+    list = applySortFamily(list, 'single');
+
+  } else {
+    // food 탭 등 나머지: 기존 mergedData 사용 (맛집 등)
+    list = [...mergedData].filter(p => p.category && p.category.startsWith('맛집/'));
   }
 
   // 페이지네이션
@@ -564,7 +578,7 @@ function renderList() {
       item.addEventListener('click', () => openDetailCouple(item.dataset.key));
       item.addEventListener('keydown', e => { if (e.key === 'Enter') openDetailCouple(item.dataset.key); });
     });
-  } else if (currentSeg === 'family') {
+  } else if (currentSeg === 'family' || currentSeg === 'single') {
     container.innerHTML = paged.map((item, idx) => renderFamilyCard(item, idx)).join('');
     // 이벤트 바인딩
     container.querySelectorAll('.fav-btn').forEach(btn => {
@@ -595,11 +609,12 @@ function renderList() {
   }
 }
 
-// ── 정렬 로직 (family 탭) ────────────────────────────
-function applySortFamily(list) {
+// ── 정렬 로직 (family/single 탭 공용) ──────────────────
+// scoreType: 'family' (기본) 또는 'single'
+function applySortFamily(list, scoreType = 'family') {
   switch (currentSort) {
     case 'recommend':
-      return list.map(item => ({ ...item, _score: calcRecommendScore(item) }))
+      return list.map(item => ({ ...item, _score: calcRecommendScore(item, scoreType) }))
                  .sort((a, b) => b._score - a._score);
     case 'popular':
       return list.sort((a, b) => (parseFloat(b.popularity_score) || 0) - (parseFloat(a.popularity_score) || 0));
@@ -751,17 +766,32 @@ function buildPillsLegacy(pl, isFood = false) {
   return pills.join('');
 }
 
-// ── 즐겨찾기 (family 탭 전용, key = name) ──────────
+// ── 즐겨찾기 (통합 key = encoded place_or_event_name) ──
 function toggleFavFamily(key, btn) {
   const idx = favorites.indexOf(key);
+  let isNowFav = false;
   if (idx >= 0) {
     favorites.splice(idx, 1);
-    if (btn) { btn.classList.remove('active'); btn.querySelector('i').className = 'fa-regular fa-star'; }
+    isNowFav = false;
   } else {
     favorites.push(key);
-    if (btn) { btn.classList.add('active'); btn.querySelector('i').className = 'fa-solid fa-star'; }
+    isNowFav = true;
   }
   localStorage.setItem('nh_favorites', JSON.stringify(favorites));
+
+  // 화면 내의 동일한 data-key 버튼 일괄 상태 갱신
+  try {
+    document.querySelectorAll(`.fav-btn[data-key="${CSS.escape(key)}"]`).forEach(b => {
+      if (isNowFav) {
+        b.classList.add('active');
+        b.querySelector('i').className = 'fa-solid fa-star';
+      } else {
+        b.classList.remove('active');
+        b.querySelector('i').className = 'fa-regular fa-star';
+      }
+    });
+  } catch (e) {}
+
   updateFavBadge();
   updateTicker();
   if (currentView === 'fav') renderFavPage();
@@ -770,14 +800,28 @@ function toggleFavFamily(key, btn) {
 // ── 즐겨찾기 (레거시, key = place_id) ──────────────
 function toggleFav(pid, btn) {
   const idx = favorites.indexOf(pid);
+  let isNowFav = false;
   if (idx >= 0) {
     favorites.splice(idx, 1);
-    if (btn) { btn.classList.remove('active'); btn.querySelector('i').className = 'fa-regular fa-star'; }
+    isNowFav = false;
   } else {
     favorites.push(pid);
-    if (btn) { btn.classList.add('active'); btn.querySelector('i').className = 'fa-solid fa-star'; }
+    isNowFav = true;
   }
   localStorage.setItem('nh_favorites', JSON.stringify(favorites));
+
+  try {
+    document.querySelectorAll(`.fav-btn[data-pid="${CSS.escape(pid)}"]`).forEach(b => {
+      if (isNowFav) {
+        b.classList.add('active');
+        b.querySelector('i').className = 'fa-solid fa-star';
+      } else {
+        b.classList.remove('active');
+        b.querySelector('i').className = 'fa-regular fa-star';
+      }
+    });
+  } catch (e) {}
+
   updateFavBadge();
   updateTicker();
   if (currentView === 'fav') renderFavPage();
@@ -786,8 +830,9 @@ function toggleFav(pid, btn) {
 function updateFavBadge() {
   const badge = document.getElementById('bnav-fav-badge');
   if (!badge) return;
-  if (favorites.length > 0) {
-    badge.textContent = favorites.length > 9 ? '9+' : favorites.length;
+  const count = favorites.length;
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : count;
     badge.removeAttribute('hidden');
   } else {
     badge.setAttribute('hidden', '');
@@ -795,13 +840,15 @@ function updateFavBadge() {
 }
 
 // ══════════════════════════════════════════
-// ★ 상세 바텀시트 (family 탭)
+// ★ 상세 바텀시트 (family / single / couple 통합 조회)
 // ══════════════════════════════════════════
 function openDetailFamily(key) {
-  const item = familyData.find(d => encodeURIComponent(d.place_or_event_name) === key);
+  const item = familyData.find(d => encodeURIComponent(d.place_or_event_name) === key)
+            || singleData.find(d => encodeURIComponent(d.place_or_event_name) === key)
+            || coupleData.find(d => encodeURIComponent(d.place_or_event_name) === key);
   if (!item) return;
 
-  const catEmoji = { '키즈카페': '🏠', '자연친화': '🌿', '문화생활': '🎭', '가족체험': '🎯' }[item.category] || '📍';
+  const catEmoji = getCategoryEmoji(item.category);
   const { lat, lon } = parseLatLon(item.region);
   const dist = calcDistance(userLat, userLon, lat, lon);
   const isFav = favorites.includes(key);
@@ -987,25 +1034,54 @@ function closeDetail() {
   document.body.style.overflow = '';
 }
 
+// ── 카테고리 이모지 헬퍼 ──────────────────────────────
+function getCategoryEmoji(cat) {
+  if (!cat) return '📍';
+  if (cat.includes('키즈')) return '🏠';
+  if (cat.includes('자연') || cat.includes('공원')) return '🌿';
+  if (cat.includes('문화') || cat.includes('역사')) return '🎭';
+  if (cat.includes('체험') || cat.includes('액티비티')) return '🎯';
+  if (cat.includes('서점') || cat.includes('독립서점') || cat.includes('북카페')) return '📚';
+  if (cat.includes('공연') || cat.includes('콘서트') || cat.includes('뮤지컬') || cat.includes('연극') || cat.includes('음악')) return '🎵';
+  if (cat.includes('전시') || cat.includes('미술관')) return '🖼️';
+  if (cat.includes('카페')) return '☕';
+  if (cat.includes('맛집')) return '🍽️';
+  if (cat.includes('야경') || cat.includes('드라이브')) return '🌃';
+  if (cat.includes('힐링') || cat.includes('스파')) return '🌿';
+  return '📍';
+}
+
 // ══════════════════════════════════════════
-// ★ 즐겨찾기 화면
+// ★ 즐겨찾기 화면 (가족/커플/싱글 통합 렌더)
 // ══════════════════════════════════════════
 function renderFavPage() {
   const favList = document.getElementById('fav-list');
   const scheduleCard = document.getElementById('fav-schedule-card');
 
-  // family 즐겨찾기 (key = encoded name)
-  const favFamilyItems = familyData.filter(d => favorites.includes(encodeURIComponent(d.place_or_event_name)));
-  // 레거시 즐겨찾기 (key = place_id)
-  const favLegacyPlaces = mergedData.filter(p => favorites.includes(p.place_id));
+  // 전체 데이터(가족, 커플, 싱글)에서 중복 없이 즐겨찾기 항목 수집
+  const allFavData = [...familyData, ...coupleData, ...singleData];
+  const favSet = new Set(favorites);
+  const seenNames = new Set();
+  const favUnifiedItems = [];
 
-  const allFavItems = [...favFamilyItems, ...favLegacyPlaces];
+  allFavData.forEach(d => {
+    const key = encodeURIComponent(d.place_or_event_name);
+    if (favSet.has(key) && !seenNames.has(d.place_or_event_name)) {
+      seenNames.add(d.place_or_event_name);
+      favUnifiedItems.push(d);
+    }
+  });
+
+  // 레거시 맛집/장소 즐겨찾기 (place_id 기반)
+  const favLegacyPlaces = mergedData.filter(p => favSet.has(p.place_id) && !seenNames.has(p.name));
+
+  const allFavItems = [...favUnifiedItems, ...favLegacyPlaces];
 
   // 일정 요약 카드
-  const withPeriod = favFamilyItems.filter(d => d.period && d.period !== '상시');
+  const withPeriod = favUnifiedItems.filter(d => d.period && d.period !== '상시');
   if (withPeriod.length > 0) {
     scheduleCard.innerHTML = withPeriod.slice(0, 3).map(item => {
-      const catEmoji = { '키즈카페': '🏠', '자연친화': '🌿', '문화생활': '🎭', '가족체험': '🎯' }[item.category] || '📍';
+      const catEmoji = getCategoryEmoji(item.category);
       const parts = item.period.split('~');
       const endDate = parts[1]?.trim() || '';
       const today = new Date();
@@ -1040,8 +1116,13 @@ function renderFavPage() {
   }
 
   favList.innerHTML = [
-    ...favFamilyItems.map((item, idx) => renderFamilyCard(item, idx)),
-    ...favLegacyPlaces.map((pl, idx) => renderLegacyCard(pl, favFamilyItems.length + idx)),
+    ...favUnifiedItems.map((item, idx) => {
+      if (item.origin || item.region_group) {
+        return renderCoupleCard(item, idx);
+      }
+      return renderFamilyCard(item, idx);
+    }),
+    ...favLegacyPlaces.map((pl, idx) => renderLegacyCard(pl, favUnifiedItems.length + idx)),
   ].join('');
 
   favList.querySelectorAll('.fav-btn[data-key]').forEach(btn => {
@@ -1051,7 +1132,11 @@ function renderFavPage() {
     btn.addEventListener('click', e => { e.stopPropagation(); toggleFav(btn.dataset.pid, btn); });
   });
   favList.querySelectorAll('.place-item[data-key]').forEach(item => {
-    item.addEventListener('click', () => openDetailFamily(item.dataset.key));
+    item.addEventListener('click', () => {
+      const isCouple = coupleData.some(c => encodeURIComponent(c.place_or_event_name) === item.dataset.key);
+      if (isCouple) openDetailCouple(item.dataset.key);
+      else openDetailFamily(item.dataset.key);
+    });
   });
   favList.querySelectorAll('.place-item[data-id]').forEach(item => {
     item.addEventListener('click', () => openDetail(item.dataset.id));
@@ -1085,15 +1170,16 @@ function updateTicker() {
   if (!track) return;
 
   let tickerItems = [];
-  const favFamilyItems = familyData.filter(d => favorites.includes(encodeURIComponent(d.place_or_event_name)) && d.period && d.period !== '상시');
+  const allFavData = [...familyData, ...coupleData, ...singleData];
+  const favItems = allFavData.filter(d => favorites.includes(encodeURIComponent(d.place_or_event_name)) && d.period && d.period !== '상시');
 
-  if (favFamilyItems.length > 0) {
-    tickerItems = favFamilyItems.map(item => ({
+  if (favItems.length > 0) {
+    tickerItems = favItems.slice(0, 5).map(item => ({
       text: `📅 ⭐ ${item.place_or_event_name} | ${item.period}`,
       key: encodeURIComponent(item.place_or_event_name),
     }));
   } else {
-    // 임박 행사 최신 3건
+    // 임박 행사 최신 5건
     const upcoming = familyData
       .filter(d => d.period && d.period !== '상시')
       .slice(0, 5);
@@ -1113,7 +1199,13 @@ function updateTicker() {
   track.innerHTML = itemsHTML + itemsHTML;
 
   track.querySelectorAll('.ticker-item[data-key]').forEach(el => {
-    el.addEventListener('click', () => { if (el.dataset.key) openDetailFamily(el.dataset.key); });
+    el.addEventListener('click', () => {
+      if (el.dataset.key) {
+        const isCouple = coupleData.some(c => encodeURIComponent(c.place_or_event_name) === el.dataset.key);
+        if (isCouple) openDetailCouple(el.dataset.key);
+        else openDetailFamily(el.dataset.key);
+      }
+    });
   });
 
   const totalChars = tickerItems.reduce((sum, i) => sum + i.text.length, 0);
@@ -1125,14 +1217,18 @@ function updateTicker() {
 // ★ 공유하기
 // ══════════════════════════════════════════
 function openShareSheet() {
-  // familyData + coupleData 전체를 대상으로 즐겨찾기 개수 계산
-  const allFavData = [
-    ...familyData,
-    ...coupleData,
-  ];
-  const favCount = allFavData.filter(d =>
-    favorites.includes(encodeURIComponent(d.place_or_event_name))
-  ).length;
+  const allFavData = [...familyData, ...coupleData, ...singleData];
+  const favSet = new Set(favorites);
+  const seen = new Set();
+  allFavData.forEach(d => {
+    const key = encodeURIComponent(d.place_or_event_name);
+    if (favSet.has(key)) seen.add(d.place_or_event_name);
+  });
+  mergedData.forEach(p => {
+    if (favSet.has(p.place_id)) seen.add(p.name);
+  });
+  const favCount = seen.size || favorites.length;
+
   const desc = document.getElementById('share-desc');
   if (favCount === 0) {
     desc.textContent = '즐겨찾기한 장소가 없어요. 장소를 추가한 후 공유해 보세요!';
@@ -1151,13 +1247,25 @@ function closeShareSheet() {
 }
 
 function buildShareText() {
-  // familyData + coupleData 전체에서 즐겨찾기 항목 수집
-  const allFavData = [...familyData, ...coupleData];
-  const favItems = allFavData.filter(d =>
-    favorites.includes(encodeURIComponent(d.place_or_event_name))
-  );
+  const allFavData = [...familyData, ...coupleData, ...singleData];
+  const favSet = new Set(favorites);
+  const seen = new Set();
+  const favItems = [];
+  allFavData.forEach(d => {
+    const key = encodeURIComponent(d.place_or_event_name);
+    if (favSet.has(key) && !seen.has(d.place_or_event_name)) {
+      seen.add(d.place_or_event_name);
+      favItems.push(d);
+    }
+  });
+  mergedData.forEach(p => {
+    if (favSet.has(p.place_id) && !seen.has(p.name)) {
+      seen.add(p.name);
+      favItems.push({ place_or_event_name: p.name, category: p.category });
+    }
+  });
   if (favItems.length === 0) return '주말해 앱에서 AI 맞춤 여가 장소를 추천받아 보세요! 🌿';
-  const list = favItems.slice(0, 5).map((d, i) => `${i + 1}. ${d.place_or_event_name} (${d.category})`).join('\n');
+  const list = favItems.slice(0, 5).map((d, i) => `${i + 1}. ${d.place_or_event_name} (${d.category || '명소'})`).join('\n');
   return `🌿 주말해 — 내 즐겨찾기 장소\n\n${list}\n\n👉 주말해: ${window.location.origin}/web/index.html`;
 }
 
@@ -1221,7 +1329,6 @@ function initEvents() {
       currentSeg = btn.dataset.seg;
       currentThemeIdx = 0;
       currentPage = 1;
-      if (currentSeg === 'food') requestGeolocation();
       renderThemeChips();
       renderList();
     });

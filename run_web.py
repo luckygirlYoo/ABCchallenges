@@ -156,6 +156,34 @@ BATCH_STEPS_TEMPLATE = [
         "desc": "편의시설 태그 및 설명/추천이유 보강",
         "status": "PENDING",
         "message": "대기 중"
+    },
+    # ── 5단계: 싱글매니아 전용 수집·통합 ──
+    {
+        "id": "step16",
+        "name": "naver_local_single_collector.py",
+        "title": "[배치 16] 싱글매니아 라이프스타일 장소 수집",
+        "script": "scripts/naver_local_single_collector.py",
+        "desc": "독립서점/북카페/아트숍/명상센터/고궁/사찰/갤러리 목록 등 네이버 로컬 API 수집",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step17",
+        "name": "independent_bookstore_collector.py",
+        "title": "[배치 17] 독립서점 공공데이터 수집",
+        "script": "scripts/independent_bookstore_collector.py",
+        "desc": "문화공공데이터광장 전국 독립서점 및 운영정보 API 수집",
+        "status": "PENDING",
+        "message": "대기 중"
+    },
+    {
+        "id": "step18",
+        "name": "generate_single_data.py",
+        "title": "[배치 18] total_single_data 통합",
+        "script": "scripts/generate_single_data.py",
+        "desc": "싱글매니아 6대 카테고리로 분류·필터링 후 CSV/JSON 최종 생성",
+        "status": "PENDING",
+        "message": "대기 중"
     }
 ]
 
