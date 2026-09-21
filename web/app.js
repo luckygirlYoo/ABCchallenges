@@ -1246,6 +1246,17 @@ function closeShareSheet() {
   document.body.style.overflow = '';
 }
 
+function getShareUrl() {
+  // 배포 환경(Vercel 등)에서는 루트 주소 https://abcchallenges.vercel.app/ 반환, 로컬에서는 로컬 주소 반환
+  if (window.location.hostname.includes('vercel.app')) {
+    return `${window.location.origin}/`;
+  }
+  if (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')) {
+    return `${window.location.origin}/web/index.html`;
+  }
+  return `${window.location.origin}/`;
+}
+
 function buildShareText() {
   const allFavData = [...familyData, ...coupleData, ...singleData];
   const favSet = new Set(favorites);
@@ -1264,14 +1275,15 @@ function buildShareText() {
       favItems.push({ place_or_event_name: p.name, category: p.category });
     }
   });
-  if (favItems.length === 0) return '주말해 앱에서 AI 맞춤 여가 장소를 추천받아 보세요! 🌿';
+  const shareUrl = getShareUrl();
+  if (favItems.length === 0) return `주말해 앱에서 AI 맞춤 여가 장소를 추천받아 보세요! 🌿\n👉 ${shareUrl}`;
   const list = favItems.slice(0, 5).map((d, i) => `${i + 1}. ${d.place_or_event_name} (${d.category || '명소'})`).join('\n');
-  return `🌿 주말해 — 내 즐겨찾기 장소\n\n${list}\n\n👉 주말해: ${window.location.origin}/web/index.html`;
+  return `🌿 주말해 — 내 즐겨찾기 장소\n\n${list}\n\n👉 주말해: ${shareUrl}`;
 }
 
 function shareKakao() {
   const text = buildShareText();
-  const shareUrl = `${window.location.origin}/web/index.html`;
+  const shareUrl = getShareUrl();
   // iOS Safari / 모바일 환경: Web Share API 우선 사용
   // (kakaolink:// 커스텀 스킴은 카카오 JS SDK 없이는 동작 안 하고 Safari에서 오류 발생)
   if (navigator.share) {
@@ -1314,7 +1326,8 @@ function copyToClipboard(text, message = '클립보드에 복사되었습니다!
 
 function shareMore() {
   const text = buildShareText();
-  if (navigator.share) navigator.share({ title: '🌿 주말해 — 내 즐겨찾기', text, url: `${window.location.origin}/web/index.html` }).catch(() => {});
+  const shareUrl = getShareUrl();
+  if (navigator.share) navigator.share({ title: '🌿 주말해 — 내 즐겨찾기', text, url: shareUrl }).catch(() => {});
   else copyToClipboard(text, '공유 기능이 지원되지 않아 클립보드에 복사되었습니다.');
 }
 
