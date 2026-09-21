@@ -1326,9 +1326,24 @@ function copyToClipboard(text, message = '클립보드에 복사되었습니다!
 
 function shareMore() {
   const text = buildShareText();
-  const shareUrl = getShareUrl();
   if (navigator.share) navigator.share({ title: '🌿 주말해 — 내 즐겨찾기', text, url: shareUrl }).catch(() => {});
   else copyToClipboard(text, '공유 기능이 지원되지 않아 클립보드에 복사되었습니다.');
+}
+
+// ── 즐겨찾기 전체 초기화 ─────────────────────────────
+function resetFavorites() {
+  if (!favorites || favorites.length === 0) {
+    alert('초기화할 즐겨찾기 항목이 없습니다.');
+    return;
+  }
+  if (confirm('저장된 즐겨찾기를 모두 삭제하시겠습니까?')) {
+    favorites = [];
+    localStorage.removeItem('nh_favorites');
+    updateFavBadge();
+    updateTicker();
+    renderFavPage();
+    renderList(); // 메인 추천 리스트의 별표 아이콘들도 모두 해제
+  }
 }
 
 // ── 이벤트 핸들러 ─────────────────────────────────────
@@ -1414,6 +1429,9 @@ function initEvents() {
   document.getElementById('bnav-home')?.addEventListener('click', () => { if (currentView !== 'home') switchToHome(); });
   document.getElementById('bnav-fav')?.addEventListener('click', () => { if (currentView !== 'fav') switchToFav(); });
   document.getElementById('header-fav-btn')?.addEventListener('click', () => { if (currentView !== 'fav') switchToFav(); });
+
+  // 즐겨찾기 초기화
+  document.getElementById('fav-reset-btn')?.addEventListener('click', resetFavorites);
 
   // 공유하기
   document.getElementById('fav-share-btn')?.addEventListener('click', openShareSheet);

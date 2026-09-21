@@ -446,6 +446,14 @@ html, body { height: 100%; font-family: var(--font); background: var(--nh-bg-sub
   font-size: 15px; font-weight: 700; color: var(--nh-text-primary);
 }
 .fav-header__left { display: flex; align-items: center; gap: 8px; }
+.fav-reset-btn {
+  background: var(--nh-bg-sub); color: var(--nh-text-sec);
+  border: 1px solid var(--nh-border); border-radius: var(--radius-sm);
+  padding: 8px 12px; font-size: 12px; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; gap: 5px;
+  font-family: var(--font); transition: all 0.2s;
+}
+.fav-reset-btn:hover { background: #FEE2E2; border-color: #F87171; color: #DC2626; }
 .fav-share-btn {
   background: var(--nh-green); color: #fff;
   border: none; border-radius: var(--radius-sm);
