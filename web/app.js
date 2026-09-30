@@ -310,10 +310,16 @@ async function loadData() {
       if (singleRes.ok) singleData = parseCSV(await singleRes.text());
     } catch (e) { console.warn('싱글 데이터 로드 스킵:', e); }
 
-    // 3) 주간 날씨 로드
+    // 3) 주간 날씨 로드 (Render 백엔드 실시간 서버 최신 weather.csv 우선 조회)
     try {
-      const wRes = await fetch('../data/weather.csv?t=' + Date.now());
-      if (wRes.ok) weatherData = parseCSV(await wRes.text());
+      const backendUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? ''
+        : 'https://abcchallenges-backend.onrender.com';
+      let wRes = await fetch(`${backendUrl}/data/weather.csv?t=` + Date.now()).catch(() => null);
+      if (!wRes || !wRes.ok) {
+        wRes = await fetch('../data/weather.csv?t=' + Date.now());
+      }
+      if (wRes && wRes.ok) weatherData = parseCSV(await wRes.text());
     } catch(e) { console.warn("날씨 데이터 로드 실패", e); }
 
     mergeData();
