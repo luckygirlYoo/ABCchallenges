@@ -82,12 +82,10 @@ SETTINGS = {
 }
 
 CSV_FIELDS = [
-    # 기존 14컬럼 — 프론트 헬퍼(parseLatLon/isFreeItem/findNearestCongestion)
-    # 를 수정 없이 재사용하기 위해 순서까지 그대로 유지한다.
     "source_site", "category", "place_or_event_name", "period", "target_age",
     "region", "fee_info", "description", "booking_url", "ai_tags",
     "crawled_at", "theme_tags", "congestion_score", "popularity_score",
-    # 커플 통합에서 추가한 5컬럼
+    "recommend_reason",
     "theme_ids",        # 커플 탭 테마 (다중값, ';' 구분)
     "theme_detail",     # 재편 전 세분류 — 나중에 다시 쪼갤 때 쓴다
     "origin",           # 어느 원천에서 왔는지
@@ -809,6 +807,26 @@ def main():
         rec["end_date"] = r["_end"]
         rec.setdefault("popularity_src", "")
         rec["popularity_src"] = r.get("popularity_src", "")
+        
+        # Clean ai_tags & theme_tags for Couple
+        cat_str = str(rec.get("category", "")).strip()
+        rec["ai_tags"] = f"couple:1.0;date_spot:1.0;{cat_str}"
+        rec["theme_tags"] = rec["theme_ids"] if rec["theme_ids"] else "couple:1.0"
+        
+        # Generate couple recommend reason
+        if "팝업" in cat_str or "popup" in rec["theme_ids"]:
+            rec["recommend_reason"] = "🛍️ 연인과 특별한 팝업스토어를 탐방하며 감성 굿즈와 사진을 남기기 좋은 데이트 코스"
+        elif any(k in cat_str for k in ["공연", "뮤지컬", "연극", "음악", "콘서트", "클래식", "국악"]):
+            rec["recommend_reason"] = "🎵 감성 가득한 무대와 음악을 즐기며 특별한 추억을 선사하는 낭만 공연"
+        elif any(k in cat_str for k in ["전시", "미술"]):
+            rec["recommend_reason"] = "🖼️ 예쁜 전시와 작품을 보며 이야기를 나누고 인생샷을 남기기 좋은 데이트 추천"
+        elif any(k in cat_str for k in ["야경", "드라이브", "데이트"]):
+            rec["recommend_reason"] = "🌙 낭만적인 밤풍경과 드라이브 분위기를 만끽할 수 있는 커플 데이트 명소"
+        elif any(k in cat_str for k in ["축제", "행사"]):
+            rec["recommend_reason"] = "🎉 활기찬 분위기 속에서 연인과 생생한 축제 이벤트를 함께 즐기는 핫플레이스"
+        else:
+            rec["recommend_reason"] = "💑 연인과 함께 둘만의 소중한 주말 추억을 나누기 좋은 맞춤형 추천 장소"
+
         out.append(rec)
 
     if not out:

@@ -190,6 +190,18 @@ def fetch_single_realtime_info(name, region):
     cache_data[cache_key] = result
     return result
 
+def sanitize_single_tags(tags_str):
+    if not tags_str:
+        return "single:1.0"
+    toks = [t.strip() for t in str(tags_str).split(';') if t.strip()]
+    cleaned = ["single:1.0"]
+    for t in toks:
+        if t.startswith("family:") or t.startswith("couple:") or t in ["family", "couple"]:
+            continue
+        if t not in cleaned:
+            cleaned.append(t)
+    return ";".join(cleaned)
+
 # ── 3. 편의시설 태그 조합 ──────────────────────────────
 def build_ai_tags(real_info, cat, orig_tags):
     tags = ["single:1.0"]
@@ -207,7 +219,7 @@ def build_ai_tags(real_info, cat, orig_tags):
     if '콘서트' in cat or '공연' in cat: tags.append("performance:1.0")
     if '전시' in cat or '미술관' in cat: tags.append("exhibition:1.0")
 
-    existing_list = [t.strip() for t in str(orig_tags).split(';') if t.strip() and ':' not in t and t not in tags]
+    existing_list = [t.strip() for t in str(orig_tags).split(';') if t.strip() and not t.startswith("family") and not t.startswith("couple") and t not in tags]
     all_tags = tags + existing_list
     return ";".join(dict.fromkeys(all_tags))
 
@@ -288,7 +300,7 @@ def enrich_data():
                 "fee_info":            str(rec.get('fee_info', fee_info)),
                 "description":         str(rec.get('description', generate_llm_description(c_name, category, orig_region, target_age))),
                 "booking_url":         str(rec.get('booking_url', row.get('booking_url', 'https://search.naver.com'))),
-                "ai_tags":             str(rec.get('ai_tags', orig_tags)),
+                "ai_tags":             sanitize_single_tags(str(rec.get('ai_tags', orig_tags))),
                 "crawled_at":          now_str,
                 "theme_tags":          str(rec.get('theme_tags', 'single:1.0')),
                 "congestion_score":    rec.get('congestion_score', row.get('congestion_score', 2)),
