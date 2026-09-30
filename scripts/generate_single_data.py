@@ -38,7 +38,23 @@ OUT_JSON = os.path.join(DATA_DIR, "total_single_data.json")
 
 NOW = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# app.js THEMES.single 6종과 동일한 카테고리 체계
+KIDS_KEYWORDS = [
+    '뽀로로', '아기상어', '핑크퐁', '티니핑', '캐치티니핑', '콩순이', '시크릿쥬쥬',
+    '캐리와', '헬로카봇', '타요', '브레드이발소', '신비아파트', '어린이뮤지컬', '아동뮤지컬',
+    '어린이', '유아', '키즈카페', '맘스하트', '아이러브맘', '육아종합지원', '어린이집',
+    '영유아', '아동', '베이비', '파워레인저', '도티', '포켓몬', '어린이도서관', '쥬라기랜드',
+    '어린이갤러리', '어린이마술', '어린이박물관', '어린이공연', '어린이체험', '동물의 사육제', '가족/어린이'
+]
+
+def check_is_kids(title="", cat="", target_age="", desc=""):
+    text = f"{title} {cat} {target_age} {desc}"
+    for kw in KIDS_KEYWORDS:
+        if kw in text:
+            if kw == '유아' and '옥유아' in title:
+                continue
+            return True
+    return False
+
 SINGLE_THEME_TAGS = {
     "전시·미술관": "exhibition:1.0;quiet:0.8;indoor:0.9",
     "독립서점":     "bookstore:1.0;quiet:1.0;indoor:1.0",
@@ -120,6 +136,9 @@ def from_culture_events(df):
         genre = safe_str(r.get("genre", ""))
         venue = safe_str(r.get("place", ""))
 
+        if check_is_kids(name, genre, "", venue):
+            continue
+
         # 콘서트/전시류는 싱글 친화도 높게, 나머지는 기본값
         est_score = 0.85 if any(k in genre for k in ["콘서트", "전시", "무용", "클래식"]) else 0.5
         if est_score < SINGLE_SCORE_THRESHOLD:
@@ -156,6 +175,13 @@ def from_tickets(df, source_label):
         name = safe_str(r.get("title", ""))
         if not name:
             continue
+
+        cat_raw = safe_str(r.get("category", ""))
+        venue = safe_str(r.get("venue", ""))
+
+        if check_is_kids(name, cat_raw, safe_str(r.get("target_age", "")), venue):
+            continue
+
         ai_tag = safe_str(r.get("ai_tags", ""))
         score = parse_single_score(ai_tag)
         if score < SINGLE_SCORE_THRESHOLD:
