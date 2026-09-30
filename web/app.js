@@ -324,12 +324,16 @@ async function loadData() {
 
     mergeData();
 
+    // ── 데이터 로드 완료 후 유효하지 않은 favorites 키 자동 정리
+    cleanStaleFavorites();
+
     updateSortChipAvailability();
     renderThemeChips();
     renderList();
     updateTicker();
     updateFavBadge();
     updateWeatherBanner();
+
   } catch (err) {
     console.error(err);
     document.getElementById('place-list').innerHTML = `
@@ -836,12 +840,67 @@ function toggleFav(pid, btn) {
 function updateFavBadge() {
   const badge = document.getElementById('bnav-fav-badge');
   if (!badge) return;
-  const count = favorites.length;
-  if (count > 0) {
-    badge.textContent = count > 99 ? '99+' : count;
+
+  // ── 1. 중복 키 제거 (같은 키가 두 번 저장된 경우)
+  const uniqueFavs = [...new Set(favorites)];
+  if (uniqueFavs.length !== favorites.length) {
+    favorites = uniqueFavs;
+    localStorage.setItem('nh_favorites', JSON.stringify(favorites));
+  }
+
+  // ── 2. 실제 데이터와 매칭되는 건수로 카운트
+  const allFavData = [...familyData, ...coupleData, ...singleData];
+  const favSet = new Set(favorites);
+  let realCount = 0;
+
+  if (allFavData.length > 0 || mergedData.length > 0) {
+    // 데이터가 로드된 경우 → 실제 매칭 건수
+    const seenNames = new Set();
+    allFavData.forEach(d => {
+      const key = encodeURIComponent(d.place_or_event_name);
+      if (favSet.has(key) && !seenNames.has(d.place_or_event_name)) {
+        seenNames.add(d.place_or_event_name);
+        realCount++;
+      }
+    });
+    mergedData.forEach(p => {
+      if (favSet.has(p.place_id) && !seenNames.has(p.name)) {
+        seenNames.add(p.name);
+        realCount++;
+      }
+    });
+  } else {
+    // 데이터 미로드 → 배열 길이로 임시 표시
+    realCount = favorites.length;
+  }
+
+  if (realCount > 0) {
+    badge.textContent = realCount > 99 ? '99+' : realCount;
     badge.removeAttribute('hidden');
   } else {
     badge.setAttribute('hidden', '');
+  }
+}
+
+// 데이터 로드 후 실제 존재하지 않는 favorites 키 자동 정리
+function cleanStaleFavorites() {
+  if (!favorites.length) return;
+
+  const allFavData = [...familyData, ...coupleData, ...singleData];
+  if (allFavData.length === 0 && mergedData.length === 0) return; // 데이터 미로드
+
+  // 유효한 키 목록 구성
+  const validKeys = new Set();
+  allFavData.forEach(d => validKeys.add(encodeURIComponent(d.place_or_event_name)));
+  mergedData.forEach(p => validKeys.add(p.place_id));
+
+  const before = favorites.length;
+  favorites = [...new Set(favorites)].filter(k => validKeys.has(k));
+  const after = favorites.length;
+
+  if (before !== after) {
+    localStorage.setItem('nh_favorites', JSON.stringify(favorites));
+    console.log(`[Fav] 유효하지 않은 키 ${before - after}건 자동 정리 (${before} → ${after}건)`);
   }
 }
 
@@ -959,6 +1018,8 @@ function openDetailFamily(key) {
   document.getElementById('sheet-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
+
+
 
 // ── 상세 바텀시트 (레거시) ───────────────────────────
 function openDetail(placeId) {
@@ -1220,6 +1281,70 @@ function updateTicker() {
 }
 
 // ══════════════════════════════════════════
+// ★ NH 포인트 획득 팝업
+// ══════════════════════════════════════════
+function showNHPointPopup(onDone) {
+  // 공유 바텀시트가 열려있으면 먼저 닫기 (팝업이 가리지 않도록)
+  closeShareSheet();
+
+  // 기존 팝업 제거
+  const old = document.getElementById('nh-point-popup');
+  if (old) old.remove();
+
+  const popup = document.createElement('div');
+  popup.id = 'nh-point-popup';
+  popup.innerHTML = `
+    <div class="nh-point-popup__inner">
+      <div class="nh-point-popup__icon">🌾</div>
+      <div class="nh-point-popup__badge">NH</div>
+      <div class="nh-point-popup__title">1 포인트 획득!</div>
+      <div class="nh-point-popup__sub">공유해 주셔서 감사해요 🙏</div>
+      <div class="nh-point-popup__coins">
+        <span class="nh-coin">💰</span>
+        <span class="nh-coin">💰</span>
+        <span class="nh-coin">💰</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(popup);
+
+  // requestAnimationFrame으로 애니메이션 트리거
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => popup.classList.add('visible'));
+  });
+
+  // 2초 후 사라지고 onDone 콜백 실행
+  setTimeout(() => {
+    popup.classList.add('hiding');
+    setTimeout(() => {
+      popup.remove();
+      if (typeof onDone === 'function') onDone();
+    }, 400);
+  }, 2000);
+}
+
+// 상세 페이지 공유하기 (단일 장소)
+function shareDetailItem(itemName, category, regionDisplay) {
+  showNHPointPopup(() => {
+    const shareUrl = getShareUrl();
+    const cat = category || '명소';
+    const text = `🌿 주말해에서 발견한 ${cat}\n📍 ${itemName} (${regionDisplay || ''})\n\n👉 ${shareUrl}`;
+    if (navigator.share) {
+      navigator.share({ title: `📍 ${itemName}`, text, url: shareUrl }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(text).then(() => {
+        const toast = document.getElementById('copy-toast');
+        if (toast) {
+          toast.innerHTML = '<i class="fa-solid fa-circle-check"></i> 클립보드에 복사되었습니다!';
+          toast.removeAttribute('hidden');
+          setTimeout(() => toast.setAttribute('hidden', ''), 3000);
+        }
+      }).catch(() => {});
+    }
+  });
+}
+
+// ══════════════════════════════════════════
 // ★ 공유하기
 // ══════════════════════════════════════════
 function openShareSheet() {
@@ -1290,35 +1415,39 @@ function buildShareText() {
 function shareKakao() {
   const text = buildShareText();
   const shareUrl = getShareUrl();
-  // iOS Safari / 모바일 환경: Web Share API 우선 사용
-  // (kakaolink:// 커스텀 스킴은 카카오 JS SDK 없이는 동작 안 하고 Safari에서 오류 발생)
-  if (navigator.share) {
-    navigator.share({
-      title: '🌿 주말해 — 내 즐겨찾기',
-      text: text,
-      url: shareUrl,
-    }).then(() => {
-      // 사용자가 카카오톡 선택 시 자동 전달됨
-    }).catch(err => {
-      // 사용자가 취소했거나 오류 — 클립보드 폴백
-      if (err.name !== 'AbortError') {
-        copyToClipboard(text, '카카오톡 공유 준비 완료! 클립보드에 복사되었습니다.');
-      }
-    });
-  } else {
-    // 데스크톱: 클립보드 복사 후 카카오톡 PC 버전 URL 스킴 시도
-    copyToClipboard(text, '카카오톡 공유용 텍스트가 클립보드에 복사되었습니다. 카카오톡에 붙여넣어 주세요.');
-  }
+  showNHPointPopup(() => {
+    // iOS Safari / 모바일 환경: Web Share API 우선 사용
+    if (navigator.share) {
+      navigator.share({
+        title: '🌿 주말해 — 내 즐겨찾기',
+        text: text,
+        url: shareUrl,
+      }).then(() => {
+        // 사용자가 카카오톡 선택 시 자동 전달됨
+      }).catch(err => {
+        if (err.name !== 'AbortError') {
+          copyToClipboard(text, '카카오톡 공유 준비 완료! 클립보드에 복사되었습니다.');
+        }
+      });
+    } else {
+      copyToClipboard(text, '카카오톡 공유용 텍스트가 클립보드에 복사되었습니다. 카카오톡에 붙여넣어 주세요.');
+    }
+  });
 }
+
 
 function shareInstagram() {
   const text = buildShareText();
-  const a = document.createElement('a'); a.href = 'instagram://app';
-  try { a.click(); setTimeout(() => copyToClipboard(text, 'Instagram을 열었습니다! 스토리 작성 시 붙여넣어 주세요.'), 1200); }
-  catch { copyToClipboard(text, 'Instagram 앱이 없습니다. 클립보드에 복사되었습니다.'); }
+  showNHPointPopup(() => {
+    const a = document.createElement('a'); a.href = 'instagram://app';
+    try { a.click(); setTimeout(() => copyToClipboard(text, 'Instagram을 열었습니다! 스토리 작성 시 붙여넣어 주세요.'), 1200); }
+    catch { copyToClipboard(text, 'Instagram 앱이 없습니다. 클립보드에 복사되었습니다.'); }
+  });
 }
 
-function copyLink() { copyToClipboard(buildShareText()); }
+function copyLink() {
+  showNHPointPopup(() => copyToClipboard(buildShareText()));
+}
 
 function copyToClipboard(text, message = '클립보드에 복사되었습니다!') {
   const toast = document.getElementById('copy-toast');
@@ -1332,8 +1461,11 @@ function copyToClipboard(text, message = '클립보드에 복사되었습니다!
 
 function shareMore() {
   const text = buildShareText();
-  if (navigator.share) navigator.share({ title: '🌿 주말해 — 내 즐겨찾기', text, url: shareUrl }).catch(() => {});
-  else copyToClipboard(text, '공유 기능이 지원되지 않아 클립보드에 복사되었습니다.');
+  const shareUrl = getShareUrl();
+  showNHPointPopup(() => {
+    if (navigator.share) navigator.share({ title: '🌿 주말해 — 내 즐겨찾기', text, url: shareUrl }).catch(() => {});
+    else copyToClipboard(text, '공유 기능이 지원되지 않아 클립보드에 복사되었습니다.');
+  });
 }
 
 // ── 즐겨찾기 전체 초기화 ─────────────────────────────
@@ -1685,6 +1817,7 @@ function openDetailCouple(key) {
   document.getElementById('sheet-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
+
 
 // ── 날씨 배너 업데이트 ─────────────────────────────────
 function updateWeatherBanner() {

@@ -300,6 +300,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Max-Age", "86400")
         self.end_headers()
 
+    def end_headers(self):
+        # JS, CSS 파일은 캐시 금지 (개발/갱신 시 즉시 반영)
+        path = self.path.split('?')[0]
+        if path.endswith('.js') or path.endswith('.css'):
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
+        super().end_headers()
+
     def do_GET(self):
         if self.path.startswith("/api/batch_status") or self.path.startswith("/api/status"):
             self.send_json({

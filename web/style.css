@@ -1318,3 +1318,140 @@ html, body { height: 100%; font-family: var(--font); background: var(--nh-bg-sub
   }
 }
 
+/* ══════════════════════════════════════════
+   ★ 상세 페이지 공유 버튼 & NH 포인트 팝업
+   ══════════════════════════════════════════ */
+
+/* NH 포인트 팝업 backdrop */
+#nh-point-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(0,0,0,0);
+  transition: background 0.3s ease;
+}
+#nh-point-popup.visible {
+  pointer-events: auto;
+  background: rgba(0,0,0,0.22);
+}
+#nh-point-popup.hiding {
+  background: rgba(0,0,0,0);
+}
+#nh-point-popup.hiding .nh-point-popup__inner {
+  opacity: 0;
+  transform: translateY(-28px) scale(0.88);
+}
+
+/* 팝업 카드 */
+.nh-point-popup__inner {
+  background: linear-gradient(150deg, #ffffff 0%, #f0faf4 55%, #e8f4ff 100%);
+  border: 2px solid #00843D;
+  border-radius: 30px;
+  padding: 36px 44px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow:
+    0 28px 64px rgba(0,132,61,0.22),
+    0 8px 24px rgba(0,102,204,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.9);
+  opacity: 0;
+  transform: translateY(44px) scale(0.82);
+  transition: all 0.48s cubic-bezier(0.34,1.56,0.64,1);
+  min-width: 230px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.nh-point-popup__inner::before {
+  content: '';
+  position: absolute;
+  top: -48px; left: -48px;
+  width: 140px; height: 140px;
+  background: radial-gradient(circle, rgba(0,132,61,0.10) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+#nh-point-popup.visible .nh-point-popup__inner {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* 이모지 아이콘 */
+.nh-point-popup__icon {
+  font-size: 52px;
+  line-height: 1;
+  animation: nhIconBounce 0.6s cubic-bezier(0.34,1.56,0.64,1) 0.15s both;
+  filter: drop-shadow(0 4px 10px rgba(0,132,61,0.28));
+}
+
+/* NH 배지 */
+.nh-point-popup__badge {
+  background: linear-gradient(135deg, #00843D 0%, #0066CC 100%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  padding: 4px 14px;
+  border-radius: 20px;
+  margin-top: 4px;
+  box-shadow: 0 2px 10px rgba(0,132,61,0.35);
+  font-family: 'Outfit', var(--font);
+}
+
+/* 포인트 제목 */
+.nh-point-popup__title {
+  font-size: 30px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #00843D 0%, #0066CC 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-top: 4px;
+  letter-spacing: -0.5px;
+  font-family: 'Outfit', var(--font);
+  animation: nhTitlePop 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.3s both;
+}
+
+/* 서브 텍스트 */
+.nh-point-popup__sub {
+  font-size: 13px;
+  color: var(--nh-text-sec);
+  font-weight: 500;
+}
+
+/* 코인 파티클 */
+.nh-point-popup__coins {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+.nh-coin {
+  font-size: 24px;
+  animation: nhCoinFly 0.7s cubic-bezier(0.34,1.56,0.64,1) both;
+  display: inline-block;
+}
+.nh-coin:nth-child(1) { animation-delay: 0.38s; }
+.nh-coin:nth-child(2) { animation-delay: 0.50s; }
+.nh-coin:nth-child(3) { animation-delay: 0.62s; }
+
+/* 키프레임 */
+@keyframes nhIconBounce {
+  from { transform: scale(0) rotate(-20deg); opacity: 0; }
+  to   { transform: scale(1) rotate(0deg);  opacity: 1; }
+}
+@keyframes nhTitlePop {
+  from { transform: scale(0.55); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+@keyframes nhCoinFly {
+  0%   { transform: translateY(24px) scale(0); opacity: 0; }
+  60%  { transform: translateY(-10px) scale(1.25); opacity: 1; }
+  100% { transform: translateY(0)    scale(1);     opacity: 1; }
+}
+
