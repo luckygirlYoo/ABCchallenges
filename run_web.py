@@ -1,9 +1,14 @@
+import sys, io, os
+try:
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+except Exception:
+    pass
 import http.server
 import socketserver
 import webbrowser
 import threading
-import os
-import sys
 import json
 import subprocess
 from datetime import datetime
@@ -194,28 +199,56 @@ batch_state = {
     "steps": json.loads(json.dumps(BATCH_STEPS_TEMPLATE))
 }
 
-def execute_batch_pipeline():
-    """배치 스크립트를 순차 실행하고 실시간 상태를 갱신하는 비동기 쓰레드"""
-    global is_collecting, last_collected_at, last_status_msg, batch_state
+stop_requested = False
+
+def execute_batch_pipeline(start_step_id=None, single_step_id=None):
+    """배치 스크립트를 순차 또는 부분/단일 실행하고 실시간 상태를 갱신하는 비동기 쓰레드"""
+    global is_collecting, last_collected_at, last_status_msg, batch_state, stop_requested
     is_collecting = True
+    stop_requested = False
     batch_state["is_running"] = True
-    batch_state["status_msg"] = "배치 파이프라인 구동 중..."
-    
-    total_steps = len(batch_state["steps"])
+
+    steps = batch_state["steps"]
+    total_steps = len(steps)
     has_error = False
 
-    for i, step in enumerate(batch_state["steps"]):
+    if single_step_id:
+        target_indices = [i for i, s in enumerate(steps) if s["id"] == single_step_id]
+        start_idx = target_indices[0] if target_indices else 0
+        end_idx = start_idx + 1
+        batch_state["status_msg"] = f"[{steps[start_idx]['title']}] 단일 단계 실행 중..."
+    elif start_step_id:
+        target_indices = [i for i, s in enumerate(steps) if s["id"] == start_step_id]
+        start_idx = target_indices[0] if target_indices else 0
+        end_idx = total_steps
+        batch_state["status_msg"] = f"[{steps[start_idx]['title']}]부터 배치 파이프라인 구동 중..."
+        # start_idx부터 끝까지 상태 PENDING으로 초기화
+        for k in range(start_idx, total_steps):
+            steps[k]["status"] = "PENDING"
+            steps[k]["message"] = "대기 중"
+    else:
+        start_idx = 0
+        end_idx = total_steps
+        batch_state["status_msg"] = "배치 파이프라인 전체 구동 중..."
+        batch_state["steps"] = json.loads(json.dumps(BATCH_STEPS_TEMPLATE))
+        steps = batch_state["steps"]
+
+    for i in range(start_idx, end_idx):
+        if stop_requested:
+            print("⏹️ 사용자에 의해 배치 중지됨.")
+            batch_state["status_msg"] = "사용자에 의해 배치가 중지되었습니다."
+            break
+
+        step = steps[i]
         script_path = os.path.join(BASE_DIR, step["script"])
         step["status"] = "RUNNING"
         step["message"] = "진행 중..."
         batch_state["current_step_id"] = step["id"]
-        batch_state["overall_progress"] = int((i / total_steps) * 100)
+        batch_state["overall_progress"] = int(((i + 1) / total_steps) * 100)
         batch_state["status_msg"] = f"{step['title']} 실행 중..."
         print(f"\n▶ [{i+1}/{total_steps}] {step['title']} 실행 시작...")
 
         try:
-            # 단계별 추가 인자 지원. dedupe_places.py 처럼 기본이 dry-run 인
-            # 스크립트는 args 로 --apply 를 넘겨야 실제로 반영된다.
             cmd = [sys.executable, script_path] + list(step.get("args", []))
             subprocess.run(cmd, check=True, cwd=BASE_DIR)
             step["status"] = "SUCCESS"
@@ -226,22 +259,27 @@ def execute_batch_pipeline():
             step["message"] = f"오류: {e}"
             has_error = True
             print(f"❌ [{i+1}/{total_steps}] {step['title']} 오류 발생: {e}")
+            if not single_step_id:
+                batch_state["status_msg"] = f"[{step['title']}] 오류 발생으로 중단됨."
+                break
 
-    batch_state["overall_progress"] = 100
     batch_state["is_running"] = False
     batch_state["current_step_id"] = None
+    is_collecting = False
 
-    if not has_error:
+    if not has_error and not stop_requested:
         last_collected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        last_status_msg = "완료되었습니다."
-        batch_state["status_msg"] = "완료되었습니다."
-        print(f"\n🎉 [배치 파이프라인] 모든 {total_steps}개 배치가 성공적으로 완료되었습니다! ({last_collected_at})")
+        if single_step_id:
+            last_status_msg = f"[{steps[start_idx]['title']}] 단일 실행이 완료되었습니다."
+        else:
+            last_status_msg = "완료되었습니다."
+            batch_state["overall_progress"] = 100
+        batch_state["status_msg"] = last_status_msg
+    elif stop_requested:
+        last_status_msg = "배치가 사용자에 의해 중지되었습니다."
+        batch_state["status_msg"] = last_status_msg
     else:
         last_status_msg = "일부 배치 실행 중 오류가 발생했습니다."
-        batch_state["status_msg"] = "일부 배치 실행 중 오류가 발생했습니다."
-        print(f"\n⚠️ [배치 파이프라인] 에러가 발생했습니다.")
-        
-    is_collecting = False
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
@@ -263,25 +301,65 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
-        global is_collecting, batch_state
-        if self.path.startswith("/api/refresh"):
+        global is_collecting, batch_state, stop_requested
+        if self.path.startswith("/api/stop"):
+            stop_requested = True
+            batch_state["status_msg"] = "배치 중지 요청됨..."
+            self.send_json({"success": True, "message": "배치 중지 요청이 전달되었습니다."})
+            return
+
+        if self.path.startswith("/api/refresh") or self.path.startswith("/api/run_step"):
             if is_collecting or batch_state["is_running"]:
                 self.send_json({"success": False, "message": "이미 수집 배치 프로세스가 실행 중입니다."})
                 return
-            
-            # 15단계 배치 상태 리셋
-            batch_state["is_running"] = True
-            batch_state["overall_progress"] = 0
-            batch_state["current_step_id"] = "step1"
-            batch_state["status_msg"] = "수집 및 보강 배치 파이프라인을 시작합니다..."
-            batch_state["steps"] = json.loads(json.dumps(BATCH_STEPS_TEMPLATE))
 
-            # 백그라운드 비동기 쓰레드로 배치 실행
-            threading.Thread(target=execute_batch_pipeline, daemon=True).start()
+            mode = "full"
+            start_step = None
+            single_step = None
+
+            if "?" in self.path:
+                from urllib.parse import parse_qs, urlparse
+                query_params = parse_qs(urlparse(self.path).query)
+                mode = query_params.get("mode", ["full"])[0]
+                start_step = query_params.get("start_step", [None])[0]
+                single_step = query_params.get("step_id", [None])[0]
+
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 0:
+                try:
+                    raw_body = self.rfile.read(content_length).decode('utf-8')
+                    body = json.loads(raw_body)
+                    mode = body.get("mode", mode)
+                    start_step = body.get("start_step", start_step)
+                    single_step = body.get("step_id", single_step)
+                except Exception:
+                    pass
+
+            if self.path.startswith("/api/run_step"):
+                if not single_step and start_step:
+                    single_step = start_step
+
+            if mode == "resume" and not start_step:
+                for s in batch_state["steps"]:
+                    if s["status"] in ("ERROR", "PENDING"):
+                        start_step = s["id"]
+                        break
+
+            threading.Thread(
+                target=execute_batch_pipeline,
+                kwargs={"start_step_id": start_step, "single_step_id": single_step},
+                daemon=True
+            ).start()
+
+            msg = "배치가 시작되었습니다."
+            if single_step:
+                msg = f"단계 ({single_step}) 단일 실행이 시작되었습니다."
+            elif start_step:
+                msg = f"단계 ({start_step})부터 배치가 시작되었습니다."
 
             self.send_json({
                 "success": True,
-                "message": "수집 및 보강 배치 파이프라인이 시작되었습니다.",
+                "message": msg,
                 "batch_state": batch_state
             })
             return

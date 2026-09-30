@@ -1,22 +1,14 @@
 """
-total_single_data.csv 2차 실시간 보강 파이프라인 (Enrichment Engine) v1.0
+total_single_data.csv 2차 실시간 보강 파이프라인 (Enrichment Engine) v2.0 - 초고속 재사용 최적화
 =============================================================================
-enrich_total_family_data.py(가족용, 배치 7)와 동일한 패턴을 싱글매니아용으로 이식.
-
 주요 기능:
-  1. 네이버 실시간 검색 기반 "혼자 방문" 편의시설(와이파이, 콘센트, 24시간 운영,
-     예약 필요 여부, 주차) 전수 검증 및 ai_tags 부착
-  2. 네이버 장소 검색 기반 WGS84 위도(lat), 경도(lng) 좌표 정밀 추출 및 region 컬럼 연동
-     (형식: "{지자체 주소} | 위도:{lat}, 경도:{lng}") -> 카카오맵/네이버맵 길찾기 완전 연동
-  3. 인기도(popularity_score) 및 실시간 혼잡도(congestion_score) 재산출
-  4. LLM 기반 장소 추천 이유(recommend_reason) 및 혼자 방문객 맞춤 설명(description) 풍부화
-  5. total_single_data.csv 및 total_single_data.json 최종 저장
-
-주의: 이름 필드가 정상 매핑되지 않아 여러 행이 같은 이름/빈 이름으로 들어오는 경우를 대비해,
-      중복 제거는 이름 단독이 아니라 (이름, region) 조합 기준으로 한다 — generate_single_data.py의
-      방어 로직과 동일한 이유.
+  1. 기존 total_single_data.json 및 캐시(naver_enrich_cache_single.json)에 이미 존재하는 
+     행사나 장소는 기존 편의시설, ai_tags, 좌표, 설명, 추천이유를 그대로 재사용하고 API 호출을 skip!
+  2. 존재하지 않는 신규 장소에 대해서만 Kakao API 및 검색을 수행하여 
+     예약 필요 여부, 주차 가능 여부, 좌표, ai_tags 등을 검색
+  3. total_single_data.csv, total_single_data.json, total_single_data.xlsx 엑셀 최종 저장
 """
-import sys, io, os, re, json, csv, random, time
+import sys, io, os, re, json, csv, random, time, shutil
 from datetime import datetime
 from urllib.parse import quote
 import requests
@@ -30,6 +22,7 @@ DATA_DIR    = os.path.join(BASE_DIR, "..", "data")
 INPUT_CSV   = os.path.join(DATA_DIR, "total_single_data.csv")
 OUTPUT_CSV  = os.path.join(DATA_DIR, "total_single_data.csv")
 OUTPUT_JSON = os.path.join(DATA_DIR, "total_single_data.json")
+OUTPUT_XLSX = os.path.join(DATA_DIR, "total_single_data.xlsx")
 CACHE_FILE  = os.path.join(DATA_DIR, "naver_enrich_cache_single.json")
 
 HTTP_HEADERS = {
@@ -37,7 +30,18 @@ HTTP_HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
-# ── 캐시 로드/저장 ──────────────────────────────────────
+# ── 카카오 로컬 API 키 ──────────────────────────────────
+_CFG_PATH = os.path.join(BASE_DIR, "config.json")
+try:
+    with open(_CFG_PATH, "r", encoding="utf-8") as _f:
+        CONFIG_KAKAO_KEY = json.load(_f).get("api_keys", {}).get("kakao_api_key", "")
+except Exception:
+    CONFIG_KAKAO_KEY = ""
+
+KAKAO_KEY = CONFIG_KAKAO_KEY
+KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+
+# ── 캐시 및 기존 JSON 로드 ──────────────────────────────
 cache_data = {}
 if os.path.exists(CACHE_FILE):
     try:
@@ -53,6 +57,27 @@ def save_cache():
     except Exception:
         pass
 
+# ── 기존 total_single_data.json 읽기 (가장 정확한 1순위 재사용 원천) ──
+existing_json_map = {}
+if os.path.exists(OUTPUT_JSON):
+    try:
+        with open(OUTPUT_JSON, 'r', encoding='utf-8') as f:
+            records = json.load(f)
+            for rec in records:
+                name = str(rec.get('place_or_event_name', '')).strip()
+                region = str(rec.get('region', '')).strip()
+                if name:
+                    existing_json_map[name] = rec
+                    clean_n = re.sub(r'[^\w\s]', '', name).strip()
+                    if clean_n:
+                        existing_json_map[clean_n] = rec
+                    if region:
+                        base_r = region.split('|')[0].strip()
+                        existing_json_map[f"{base_r}_{name}"] = rec
+        print(f"📦 기존 total_single_data.json ({len(records)}건) 빠른 매핑 완료")
+    except Exception as e:
+        print(f"⚠️ 기존 JSON 로드 경고: {e}")
+
 # ── 1. 장소명 클리닝 ────────────────────────────────────
 def clean_name(name):
     if not name:
@@ -62,45 +87,106 @@ def clean_name(name):
     name = re.sub(r'[^\w\s\-\.\(\)]', '', name)
     return name.strip()
 
-# ── 2. 네이버 실시간 검색 기반 위도/경도 & 혼자방문 편의시설 추출 ─────
-def fetch_naver_realtime_info(name, region):
-    cache_key = f"{region}_{name}"
-    if cache_key in cache_data:
-        return cache_data[cache_key]
+# ── 2. Kakao Local API 키워드 검색 (좌표 및 장소 파악) ─────
+def geocode_kakao(name, region):
+    if not KAKAO_KEY or KAKAO_KEY.startswith("YOUR_"):
+        return None, None, {}
 
-    clean_region = region.split('|')[0].strip() if region else ""
-    query = f"{clean_region} {name}".strip()
-    search_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(query)}"
-
-    lat, lng = None, None
-    has_wifi, has_outlet, is_24h, has_parking, needs_reservation = False, False, False, False, False
+    clean_r = region.split('|')[0].strip() if region else ""
+    query = f"{clean_r} {name}".strip() if clean_r else name
 
     try:
-        r = requests.get(search_url, headers=HTTP_HEADERS, timeout=5)
+        r = requests.get(
+            KAKAO_KEYWORD_URL,
+            headers={"Authorization": f"KakaoAK {KAKAO_KEY}"},
+            params={"query": query, "size": 1},
+            timeout=5
+        )
+        if r.status_code == 200:
+            docs = r.json().get("documents", [])
+            if docs:
+                d = docs[0]
+                # 카카오: x=경도(lng), y=위도(lat)
+                return d.get("y"), d.get("x"), d
+    except Exception:
+        pass
+    return None, None, {}
+
+def fetch_single_realtime_info(name, region):
+    """
+    1) 기존 total_single_data.json 또는 캐시에 존재하면 API 스킵 & 즉시 재사용.
+    2) 없을 때만 Kakao API 및 검색 호출.
+    """
+    clean_r = region.split('|')[0].strip() if region else ""
+    c_name = clean_name(name) or name
+
+    # 1. 기존 json/캐시 키 후보들
+    candidate_keys = [
+        f"{region}_{name}",
+        f"{clean_r}_{name}",
+        f"{clean_r}_{c_name}",
+        name,
+        c_name
+    ]
+
+    for k in candidate_keys:
+        if k in existing_json_map:
+            rec = existing_json_map[k]
+            _m = re.search(r'위도:([\d.]+), 경도:([\d.]+)', rec.get('region', ''))
+            lat = _m.group(1) if _m else None
+            lng = _m.group(2) if _m else None
+            tags = str(rec.get('ai_tags', ''))
+            return {
+                "from_existing": True,
+                "existing_record": rec,
+                "lat": lat,
+                "lng": lng,
+                "wifi": ("wifi:1.0" in tags),
+                "outlet": ("outlet:1.0" in tags),
+                "is_24h": ("24h:1.0" in tags),
+                "parking": ("parking:1.0" in tags),
+                "reservation": ("reservation_required:1.0" in tags),
+            }
+
+        if k in cache_data and cache_data[k] is not None:
+            c_info = cache_data[k]
+            c_info["from_existing"] = False
+            return c_info
+
+    # 2. 캐시에 없으므로 KAKAO API 호출
+    lat, lng, kakao_doc = geocode_kakao(name, region)
+
+    # 기본 검색어 검증
+    query = f"{clean_r} {name}".strip()
+    search_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(query)}"
+
+    has_wifi, has_outlet, is_24h, has_parking, needs_reservation = False, False, False, False, False
+
+    # 카카오 카테고리나 네이버 검색 결과로 편의시설 추론
+    cat_name = kakao_doc.get("category_name", "")
+    if "주차" in cat_name or "발렛" in cat_name:
+        has_parking = True
+
+    try:
+        r = requests.get(search_url, headers=HTTP_HEADERS, timeout=4)
         if r.status_code == 200:
             html = r.text
-
-            # 1) 위도(lat), 경도(lng) 추출
-            lats = re.findall(r'"y":"([0-9\.]+)"', html) or re.findall(r'"lat":"([0-9\.]+)"', html)
-            lngs = re.findall(r'"x":"([0-9\.]+)"', html) or re.findall(r'"lng":"([0-9\.]+)"', html)
-            if lats: lat = lats[0]
-            if lngs: lng = lngs[0]
-
-            # 2) 혼자 방문 시 중요한 편의시설 실검증
             has_wifi        = any(k in html for k in ["와이파이", "wifi", "WIFI", "무선인터넷"])
             has_outlet      = any(k in html for k in ["콘센트", "전원", "충전"])
             is_24h          = any(k in html for k in ["24시간", "밤샘", "심야운영"])
-            has_parking     = any(k in html for k in ["주차", "주차장", "발렛", "무료주차"])
-            needs_reservation = any(k in html for k in ["예약필수", "예약 필수", "사전예약", "예약제"])
-
+            has_parking     = has_parking or any(k in html for k in ["주차", "주차장", "발렛", "무료주차"])
+            needs_reservation = any(k in html for k in ["예약필수", "예약 필수", "사전예약", "예약제", "네이버예약"])
     except Exception:
         pass
 
     result = {
+        "from_existing": False,
         "lat": lat, "lng": lng,
         "wifi": has_wifi, "outlet": has_outlet, "is_24h": is_24h,
         "parking": has_parking, "reservation": needs_reservation,
     }
+
+    cache_key = f"{clean_r}_{c_name}"
     cache_data[cache_key] = result
     return result
 
@@ -128,11 +214,11 @@ def build_ai_tags(real_info, cat, orig_tags):
 # ── 4. 추천 이유 및 설명 생성 ────────────────────────────
 def generate_recommend_reason(name, cat, ai_tags, real_info):
     if real_info.get("wifi") and real_info.get("outlet"):
-        return "🔌 실시간 네이버 검증 와이파이·콘센트 완비로 혼자 몰입하기 완벽한 공간"
+        return "🔌 와이파이·콘센트 완비로 혼자 몰입하기 완벽한 공간"
     elif real_info.get("is_24h"):
-        return "🌙 24시간 운영 확인 — 시간 눈치 안 보고 혼자 여유롭게 머물기 좋은 곳"
+        return "🌙 24시간 운영 — 시간 눈치 안 보고 혼자 여유롭게 머물기 좋은 곳"
     elif real_info.get("parking"):
-        return "🅿️ 네이버 지도 실검증 주차 지원으로 혼자 편하게 방문하기 좋은 곳"
+        return "🅿️ 주차 지원으로 혼자 편하게 방문하기 좋은 곳"
     elif 'bookstore:1.0' in ai_tags:
         return "📚 혼자만의 시간을 보내기 좋은 조용한 독서 공간"
     elif 'healing:1.0' in ai_tags:
@@ -152,18 +238,19 @@ def generate_llm_description(name, cat, region, target_age):
     reg_clean = region.split('|')[0].strip() if region else "수도권"
     return (
         f"[{name}]는 {reg_clean} 지역에 위치한 혼자를 위한 최적의 공간입니다. "
-        f"실시간 네이버 검색 기반으로 와이파이·콘센트·주차 등 편의시설이 검증되었으며, "
+        f"와이파이·콘센트·주차 등 편의시설이 잘 갖춰져 있으며, "
         f"{cat}을(를) 좋아하는 {target_age}에게 적극 추천합니다."
     )
 
 # ── 5. 메인 보강 파이프라인 ────────────────────────────────
 def enrich_data():
+    start_time = time.time()
     print("=" * 75)
-    print("  total_single_data.csv 2차 실시간 보강 파이프라인 (네이버 검색&좌표) 구동")
+    print("  total_single_data.csv 2차 보강 파이프라인 (기존 데이터 재사용 최적화) 구동")
     print("=" * 75)
 
     if not os.path.exists(INPUT_CSV):
-        print(f"❌ 입력 파일 없음: {INPUT_CSV} (먼저 배치 10 generate_single_data.py를 실행하세요.)")
+        print(f"❌ 입력 파일 없음: {INPUT_CSV}")
         return
 
     df = pd.read_csv(INPUT_CSV, encoding='utf-8-sig')
@@ -171,6 +258,9 @@ def enrich_data():
 
     enriched_rows = []
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    skipped_count = 0
+    api_count = 0
 
     count = 0
     for idx, row in df.iterrows():
@@ -182,80 +272,97 @@ def enrich_data():
         fee_info    = str(row.get('fee_info', '')).strip()
         orig_tags   = str(row.get('ai_tags', '')).strip()
 
-        # 1) 네이버 실시간 검색 기반 위도/경도 좌표 & 혼자방문 편의시설 검증
-        real_info = fetch_naver_realtime_info(c_name, orig_region)
+        # 1) 기존 데이터/캐시 확인 (있으면 즉시 재사용 & API 스킵)
+        real_info = fetch_single_realtime_info(c_name, orig_region)
 
-        # 2) 위도/경도 좌표 연동한 region 포맷 재구성
-        base_addr = orig_region.split('|')[0].strip() if orig_region else f"수도권 {c_name}"
-        lat = real_info.get("lat")
-        lng = real_info.get("lng")
-        region_fmt = f"{base_addr} | 위도:{lat}, 경도:{lng}" if (lat and lng) else base_addr
+        if real_info.get("from_existing") and real_info.get("existing_record"):
+            # 기존 JSON 항목 그대로 보존/재사용!
+            rec = real_info["existing_record"]
+            enriched_rows.append({
+                "source_site":         str(rec.get('source_site', row.get('source_site', '네이버 추천'))),
+                "category":            str(rec.get('category', category)),
+                "place_or_event_name": c_name,
+                "period":              str(rec.get('period', row.get('period', '상시'))),
+                "target_age":          target_age,
+                "region":              str(rec.get('region', orig_region)),
+                "fee_info":            str(rec.get('fee_info', fee_info)),
+                "description":         str(rec.get('description', generate_llm_description(c_name, category, orig_region, target_age))),
+                "booking_url":         str(rec.get('booking_url', row.get('booking_url', 'https://search.naver.com'))),
+                "ai_tags":             str(rec.get('ai_tags', orig_tags)),
+                "crawled_at":          now_str,
+                "theme_tags":          str(rec.get('theme_tags', 'single:1.0')),
+                "congestion_score":    rec.get('congestion_score', row.get('congestion_score', 2)),
+                "popularity_score":    rec.get('popularity_score', row.get('popularity_score', 75)),
+                "recommend_reason":    str(rec.get('recommend_reason', '🙋 혼자 즐기기 좋은 싱글 추천 명소'))
+            })
+            skipped_count += 1
+        else:
+            # 2) 신규 항목만 KAKAO API & 실검증 진행
+            api_count += 1
+            base_addr = orig_region.split('|')[0].strip() if orig_region else f"수도권 {c_name}"
+            lat = real_info.get("lat")
+            lng = real_info.get("lng")
+            region_fmt = f"{base_addr} | 위도:{lat}, 경도:{lng}" if (lat and lng) else base_addr
 
-        # 3) 실검증 편의시설 ai_tags 구성
-        new_ai_tags = build_ai_tags(real_info, category, orig_tags)
+            new_ai_tags = build_ai_tags(real_info, category, orig_tags)
 
-        # 4) 인기도 & 혼잡도 수치
-        try:
-            pop_score = int(row.get('popularity_score', 70))
-            if pop_score <= 0: pop_score = random.randint(60, 95)
-        except Exception:
-            pop_score = random.randint(60, 95)
+            pop_score = row.get('popularity_score', 75)
+            cong_score = row.get('congestion_score', 2)
 
-        try:
-            cong_score = int(row.get('congestion_score', 2))
-            if cong_score not in [1, 2, 3, 4, 5]: cong_score = random.randint(1, 3)
-        except Exception:
-            cong_score = random.randint(1, 3)
+            description = generate_llm_description(c_name, category, base_addr, target_age)
+            recommend_reason = generate_recommend_reason(c_name, category, new_ai_tags, real_info)
 
-        # 5) 혼자 방문객 맞춤 설명 및 추천 이유 생성
-        description = generate_llm_description(c_name, category, base_addr, target_age)
-        recommend_reason = generate_recommend_reason(c_name, category, new_ai_tags, real_info)
-
-        enriched_rows.append({
-            "source_site":         str(row.get('source_site', '네이버 추천')),
-            "category":            category,
-            "place_or_event_name": c_name,
-            "period":              str(row.get('period', '상시')),
-            "target_age":          target_age,
-            "region":              region_fmt,
-            "fee_info":            fee_info,
-            "description":         description,
-            "booking_url":         str(row.get('booking_url', 'https://search.naver.com')),
-            "ai_tags":             new_ai_tags,
-            "crawled_at":          now_str,
-            "theme_tags":          str(row.get('theme_tags', 'single:1.0')),
-            "congestion_score":    cong_score,
-            "popularity_score":    pop_score,
-            "recommend_reason":    recommend_reason
-        })
+            enriched_rows.append({
+                "source_site":         str(row.get('source_site', '네이버 추천')),
+                "category":            category,
+                "place_or_event_name": c_name,
+                "period":              str(row.get('period', '상시')),
+                "target_age":          target_age,
+                "region":              region_fmt,
+                "fee_info":            fee_info,
+                "description":         description,
+                "booking_url":         str(row.get('booking_url', 'https://search.naver.com')),
+                "ai_tags":             new_ai_tags,
+                "crawled_at":          now_str,
+                "theme_tags":          str(row.get('theme_tags', 'single:1.0')),
+                "congestion_score":    cong_score,
+                "popularity_score":    pop_score,
+                "recommend_reason":    recommend_reason
+            })
 
         count += 1
-        if count % 100 == 0 or count == len(df):
-            print(f"  [보강 진행] {count}/{len(df)}건 처리 완료 (위도/경도 & 편의시설 네이버 실검증 진행 중)")
+        if count % 500 == 0 or count == len(df):
+            print(f"  [보강 진행] {count}/{len(df)}건 완료 (기존 재사용: {skipped_count}건, API 신규: {api_count}건)")
+            save_cache()
 
-    # 캐시 저장
     save_cache()
 
     # DataFrame 생성 및 중복 제거
-    # (이름 단독이 아니라 이름+region 조합 기준 — 이름 필드 매핑 실패로 여러 행이 같은 값이 되는 경우 대비)
     res_df = pd.DataFrame(enriched_rows)
     b_len = len(res_df)
     res_df = res_df.drop_duplicates(subset=['place_or_event_name', 'region'])
     final_len = len(res_df)
     print(f"\n중복 제거: {b_len} → {final_len}건")
 
-    print("\n카테고리별 분포:")
-    print(res_df["category"].value_counts().to_string())
-
-    # CSV 저장
+    # 1) CSV 저장
     res_df.to_csv(OUTPUT_CSV, index=False, encoding='utf-8-sig')
-    print(f"\n✅ 보강된 CSV 저장 완료: {OUTPUT_CSV} ({final_len}건)")
+    print(f"✅ 보강된 CSV 저장 완료: {OUTPUT_CSV} ({final_len}건)")
 
-    # JSON 저장
+    # 2) JSON 저장
     json_records = res_df.to_dict(orient='records')
     with open(OUTPUT_JSON, 'w', encoding='utf-8') as f:
         json.dump(json_records, f, ensure_ascii=False, indent=2)
     print(f"✅ 보강된 JSON 저장 완료: {OUTPUT_JSON} ({final_len}건)")
+
+    # 3) XLSX (엑셀) 저장
+    try:
+        res_df.to_excel(OUTPUT_XLSX, index=False, engine='openpyxl')
+        print(f"✅ 보강된 XLSX 엑셀 저장 완료: {OUTPUT_XLSX} ({final_len}건)")
+    except Exception as e:
+        print(f"⚠️ XLSX 엑셀 저장 경고: {e}")
+
+    total_time = time.time() - start_time
+    print(f"✨ 완료! 총 소요시간: {total_time:.1f}초 (기존 데이터 재사용: {skipped_count}/{count}건)")
     print("=" * 75)
 
 if __name__ == "__main__":

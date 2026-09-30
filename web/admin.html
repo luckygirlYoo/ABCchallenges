@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2.0">
 </head>
 <body class="admin-body">
   <div class="admin-container">
@@ -42,6 +42,14 @@
         <div class="batch-btn-group">
           <button class="action-btn refresh primary" id="admin-run-collect-btn">
             <i class="fa-solid fa-play"></i> 수집 실행 (전체 18단계 구동)
+          </button>
+          <button class="action-btn refresh" id="admin-stop-batch-btn"
+            style="display:none; background:#EF4444;">
+            <i class="fa-solid fa-stop"></i> 배치 중지
+          </button>
+          <button class="action-btn refresh" id="admin-resume-batch-btn"
+            style="display:none; background:#F59E0B;">
+            <i class="fa-solid fa-forward-step"></i> 오류 단계부터 재시작
           </button>
           <button class="action-btn refresh" id="admin-weather-btn" style="background:#10B981;">
             <i class="fa-solid fa-cloud-sun"></i> 날씨 갱신
@@ -144,6 +152,6 @@
     </div>
 
   </div>
-  <script src="admin.js"></script>
+  <script src="admin.js?v=2.1"></script>
 </body>
 </html>

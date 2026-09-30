@@ -43,22 +43,19 @@ const DATASET_CONFIG = {
     file: '../data/total_couple_data.csv',
     categories: [
       { id: 'all', label: '전체 DB', icon: 'fa-table' },
-      { id: '전시/미술관', label: '전시/미술관', icon: 'fa-palette' },
-      { id: '감성카페', label: '감성카페', icon: 'fa-mug-saucer' },
-      { id: '야경/드라이브', label: '야경/드라이브', icon: 'fa-moon' },
-      { id: '액티비티', label: '액티비티', icon: 'fa-bolt' },
-      { id: '힐링/스파', label: '힐링/스파', icon: 'fa-spa' },
-      { id: '공연/뮤지컬', label: '공연/뮤지컬', icon: 'fa-music' },
-      { id: '데이트맛집', label: '데이트맛집', icon: 'fa-utensils' },
-      { id: '테마파크', label: '테마파크', icon: 'fa-icons' },
+      { id: '팝업스토어', label: '팝업스토어', icon: 'fa-store' },
+      { id: '공연/뮤지컬', label: '공연/뮤지컬', icon: 'fa-masks-theater' },
+      { id: '전시/미술', label: '전시/미술', icon: 'fa-palette' },
+      { id: '야경/데이트', label: '야경/데이트', icon: 'fa-moon' },
+      { id: '축제/행사', label: '축제/행사', icon: 'fa-icons' },
     ],
     stats: [
       { label: '총 데이터 건수', icon: 'fa-database', color: '#60A5FA', filter: () => true },
-      { label: '전시/미술관', icon: 'fa-palette', color: '#C084FC', filter: r => (r.category || '').includes('전시') || (r.category || '').includes('미술관') },
-      { label: '감성카페', icon: 'fa-mug-saucer', color: '#FB923C', filter: r => (r.category || '').includes('카페') },
-      { label: '야경/드라이브', icon: 'fa-moon', color: '#818CF8', filter: r => (r.category || '').includes('야경') || (r.category || '').includes('드라이브') },
-      { label: '액티비티/체험', icon: 'fa-bolt', color: '#F43F5E', filter: r => (r.category || '').includes('액티비티') || (r.category || '').includes('체험') || (r.category || '').includes('테마파크') },
-      { label: '공연/문화', icon: 'fa-music', color: '#A78BFA', filter: r => (r.category || '').includes('공연') || (r.category || '').includes('뮤지컬') || (r.category || '').includes('연극') || (r.category || '').includes('음악') || (r.category || '').includes('무용') },
+      { label: '팝업스토어', icon: 'fa-store', color: '#FB923C', filter: r => (r.category || '').includes('팝업') },
+      { label: '공연/뮤지컬', icon: 'fa-masks-theater', color: '#A78BFA', filter: r => (r.category || '').includes('공연') || (r.category || '').includes('뮤지컬') || (r.category || '').includes('연극') || (r.category || '').includes('음악') || (r.category || '').includes('콘서트') || (r.category || '').includes('무용') || (r.category || '').includes('국악') || (r.category || '').includes('클래식') },
+      { label: '전시/미술', icon: 'fa-palette', color: '#C084FC', filter: r => (r.category || '').includes('전시') || (r.category || '').includes('미술') },
+      { label: '야경/데이트', icon: 'fa-moon', color: '#818CF8', filter: r => (r.category || '').includes('야경') || (r.category || '').includes('데이트') || (r.category || '').includes('드라이브') },
+      { label: '축제/행사', icon: 'fa-icons', color: '#F43F5E', filter: r => (r.category || '').includes('축제') || (r.category || '').includes('행사') },
       { label: '예매 가능', icon: 'fa-ticket', color: '#34D399', filter: r => r.booking_url && r.booking_url.startsWith('http') }
     ]
   },
@@ -252,8 +249,24 @@ function renderBatchState(bState) {
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 18단계 수집 파이프라인 진행 중...';
     } else {
       btn.disabled = false;
-      btn.innerHTML = '<i class="fa-solid fa-play"></i> 수집 실행 (전체 18단계 구동)';
+      const hasError = steps.some(s => s.status === 'ERROR');
+      const hasStopped = bState.status_msg && bState.status_msg.includes('중지');
+      if (hasError || hasStopped) {
+        btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> 수집 전체 다시 실행';
+      } else {
+        btn.innerHTML = '<i class="fa-solid fa-play"></i> 수집 실행 (전체 18단계 구동)';
+      }
     }
+  }
+
+  // 중지 + 오류에서 재시작 버튼
+  const stopBtn = document.getElementById('admin-stop-batch-btn');
+  const resumeBtn = document.getElementById('admin-resume-batch-btn');
+  if (stopBtn) stopBtn.style.display = isRunning ? 'inline-flex' : 'none';
+  if (resumeBtn) {
+    const hasError = steps.some(s => s.status === 'ERROR');
+    const hasStopped = !isRunning && (bState.status_msg || '').includes('중지');
+    resumeBtn.style.display = (!isRunning && (hasError || hasStopped)) ? 'inline-flex' : 'none';
   }
 
   // 18개 배치 카드 렌더링
@@ -295,10 +308,46 @@ function renderBatchState(bState) {
             <i class="fa-solid ${s.status === 'ERROR' ? 'fa-triangle-exclamation' : s.status === 'SUCCESS' ? 'fa-check' : 'fa-circle-info'}"></i>
             ${s.message}
           </div>` : ''}
+        <div class="step-action-bar">
+          <button class="step-ctrl-btn single" onclick="runSingleStep('${s.id}')" ${isRunning ? 'disabled' : ''} title="Step ${stepNum}만 1단계 실행">
+            <i class="fa-solid fa-play"></i> 단일 실행
+          </button>
+          <button class="step-ctrl-btn resume" onclick="runFromStep('${s.id}')" ${isRunning ? 'disabled' : ''} title="Step ${stepNum}부터 18단계까지 실행">
+            <i class="fa-solid fa-forward-step"></i> 이 단계부터 실행
+          </button>
+        </div>
       </div>
     `;
   }).join('');
 }
+
+window.runSingleStep = async function(stepId) {
+  try {
+    const res = await fetch(`/api/run_step?step_id=${stepId}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      startBatchPolling();
+    } else {
+      alert(`❌ ${data.message || '단일 단계 실행 실패'}`);
+    }
+  } catch (err) {
+    alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+  }
+};
+
+window.runFromStep = async function(stepId) {
+  try {
+    const res = await fetch(`/api/refresh?start_step=${stepId}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      startBatchPolling();
+    } else {
+      alert(`❌ ${data.message || '단계별 재실행 실패'}`);
+    }
+  } catch (err) {
+    alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+  }
+};
 
 function startBatchPolling() {
   if (pollInterval) clearInterval(pollInterval);
@@ -310,16 +359,18 @@ function startBatchPolling() {
       if (bState) {
         renderBatchState(bState);
 
-        // 전체 완료 시 (완료되었습니다. 알림창 출력)
+        // 전체 완료
         if (!bState.is_running && bState.overall_progress === 100) {
           clearInterval(pollInterval);
           pollInterval = null;
-          alert('가족, 커플, 싱글 전체 데이터 수집 및 갱신이 완료되었습니다!');
-          loadData(); // 현재 보고 있는 데이터셋 테이블 리로드
-        } else if (!bState.is_running && bState.status_msg.includes('오류')) {
+          loadData();
+        } else if (!bState.is_running && (
+            bState.status_msg.includes('오류') ||
+            bState.status_msg.includes('중지')
+        )) {
+          // 오류 또는 중지 — 폴링 멈추고 UI에서 확인 가능
           clearInterval(pollInterval);
           pollInterval = null;
-          alert(`⚠️ 배치 완료 (일부 오류 발생): ${bState.status_msg}`);
           loadData();
         }
       }
@@ -339,7 +390,25 @@ function applyFilter() {
   if (currentTable !== 'all') {
     rows = rows.filter(r => {
       const cat = r.category || '';
-      const theme = r.theme_ids || '';
+      const theme = r.theme_tags || r.theme_ids || '';
+
+      if (currentDataset === 'couple') {
+        if (currentTable === '팝업스토어') return cat.includes('팝업');
+        if (currentTable === '전시/미술') return cat.includes('전시') || cat.includes('미술');
+        if (currentTable === '공연/뮤지컬') return cat.includes('공연') || cat.includes('뮤지컬') || cat.includes('연극') || cat.includes('음악') || cat.includes('콘서트') || cat.includes('무용') || cat.includes('국악') || cat.includes('클래식') || cat.includes('오페라') || cat.includes('독주');
+        if (currentTable === '야경/데이트') return cat.includes('야경') || cat.includes('데이트') || cat.includes('드라이브');
+        if (currentTable === '축제/행사') return cat.includes('축제') || cat.includes('행사');
+      }
+
+      if (currentDataset === 'single') {
+        if (currentTable === '전시·미술관') return cat.includes('전시') || cat.includes('미술');
+        if (currentTable === '독립서점·북카페') return cat.includes('서점') || cat.includes('북카페');
+        if (currentTable === '콘서트·공연') return cat.includes('콘서트') || cat.includes('공연') || cat.includes('음악');
+        if (currentTable === '조용한 힐링') return cat.includes('힐링');
+        if (currentTable === '역사·문화') return cat.includes('역사') || cat.includes('문화');
+        if (currentTable === '자연·공원') return cat.includes('자연') || cat.includes('공원');
+      }
+
       return cat === currentTable || cat.includes(currentTable) || theme.includes(currentTable);
     });
   }
@@ -573,6 +642,38 @@ document.addEventListener('DOMContentLoaded', () => {
         startBatchPolling();
       } else {
         alert(`❌ ${data.message || '수집 실행 오류'}`);
+      }
+    } catch (err) {
+      alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+    }
+  });
+
+  // 배치 중지 버튼
+  document.getElementById('admin-stop-batch-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('admin-stop-batch-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 중지 요청 중...';
+    try {
+      const res = await fetch('/api/stop', { method: 'POST' });
+      const data = await res.json();
+      // 현재 단계 완료 후 멈추므로 짧간 대기
+    } catch (err) {
+      console.error('중지 요청 실패:', err);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-stop"></i> 배치 중지';
+    }
+  });
+
+  // 오류 단계부터 재시작
+  document.getElementById('admin-resume-batch-btn')?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/refresh?mode=resume', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        startBatchPolling();
+      } else {
+        alert(`❌ ${data.message || '재시작 오류'}`);
       }
     } catch (err) {
       alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');

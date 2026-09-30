@@ -36,8 +36,12 @@ source_site 라벨은 수집기 개정 때마다 바뀐다 (실측: 'culture.seo
 import sys, io, os, csv, json, re, time, collections
 import requests
 
-sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
+try:
+    if hasattr(sys.stdout, 'detach'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
+        sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
+except Exception:
+    pass
 
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR   = os.path.join(BASE_DIR, "..", "data")
