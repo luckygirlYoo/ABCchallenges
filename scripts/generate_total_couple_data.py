@@ -65,7 +65,9 @@ if hasattr(sys.stdout, "detach"):
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "..", "data")
-OUTPUT_CSV = os.path.join(DATA_DIR, "total_couple_data.csv")
+is_batch_mode = ("--batch-mode" in sys.argv) or os.environ.get("BATCH_MODE") == "1"
+suffix = "_batch" if is_batch_mode else ""
+OUTPUT_CSV = os.path.join(DATA_DIR, f"total_couple_data{suffix}.csv")
 
 # ── 설정 ─────────────────────────────────────────────────────────────────
 SETTINGS = {
@@ -148,10 +150,22 @@ DETAIL_TO_THEME = {
 # 공연 장르 → 테마. 전시성 장르만 exhibition, 나머지는 concert.
 EXHIBITION_WORDS = ("전시", "미술", "갤러리", "박물")
 
-# 아동 대상 판정 — 커플 탭에서 제외한다(버리지 않고 사유를 남긴다)
-KIDS_PATTERNS = re.compile(
-    r"가족/어린이|어린이|아동|키즈|유아|초등|교육/체험", re.I
-)
+KIDS_KEYWORDS = [
+    '뽀로로', '아기상어', '핑크퐁', '티니핑', '캐치티니핑', '콩순이', '시크릿쥬쥬',
+    '캐리와', '헬로카봇', '타요', '브레드이발소', '신비아파트', '어린이뮤지컬', '아동뮤지컬',
+    '어린이', '유아', '키즈카페', '맘스하트', '아이러브맘', '육아종합지원', '어린이집',
+    '영유아', '아동', '베이비', '파워레인저', '도티', '포켓몬', '어린이도서관', '쥬라기랜드',
+    '어린이갤러리', '어린이마술', '어린이박물관', '어린이공연', '어린이체험', '동물의 사육제', '가족/어린이'
+]
+
+def check_is_kids(title="", cat="", target_age="", desc=""):
+    text = f"{title} {cat} {target_age} {desc}"
+    for kw in KIDS_KEYWORDS:
+        if kw in text:
+            if kw == '유아' and '옥유아' in title:
+                continue
+            return True
+    return False
 
 _today = date.today()
 
@@ -448,7 +462,7 @@ def adapt_ticketlink(rows, geo, now):
             "_themes": {genre_theme(cat)},
             "_origin": "ticketlink",
             "_end": end,
-            "_kids": bool(KIDS_PATTERNS.search(cat)),
+            "_kids": check_is_kids((x.get("title") or "").strip(), cat, (x.get("target_age") or "").strip()),
             "_pop_raw": None,
         })
     return out
@@ -496,7 +510,7 @@ def adapt_interpark(rows, geo, now):
             "_themes": {genre_theme(cat)},
             "_origin": "interpark",
             "_end": end,
-            "_kids": bool(KIDS_PATTERNS.search(cat)),
+            "_kids": check_is_kids((x.get("title") or "").strip(), cat),
             "_pop_raw": pct,
         })
     return out
@@ -540,7 +554,7 @@ def adapt_culture(rows, geo, now):
             "_themes": {genre_theme(genre)},
             "_origin": "culture_seoul",
             "_end": end,
-            "_kids": bool(KIDS_PATTERNS.search(genre)),
+            "_kids": check_is_kids((x.get("title") or "").strip(), genre, "", place),
             "_pop_raw": pop,
         })
     return out
@@ -594,6 +608,8 @@ def load_unified(rows, origin):
 
         if not themes:
             themes.add(THEME_CONCERT)
+
+        kids = kids or check_is_kids(row["place_or_event_name"], row["category"], row["target_age"], row["description"])
 
         row["_themes"] = themes
         row["_origin"] = origin

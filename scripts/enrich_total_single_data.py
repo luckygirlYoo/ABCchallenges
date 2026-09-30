@@ -19,10 +19,12 @@ sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR    = os.path.join(BASE_DIR, "..", "data")
+is_batch_mode = ("--batch-mode" in sys.argv) or os.environ.get("BATCH_MODE") == "1"
+suffix      = "_batch" if is_batch_mode else ""
 INPUT_CSV   = os.path.join(DATA_DIR, "total_single_data.csv")
-OUTPUT_CSV  = os.path.join(DATA_DIR, "total_single_data.csv")
-OUTPUT_JSON = os.path.join(DATA_DIR, "total_single_data.json")
-OUTPUT_XLSX = os.path.join(DATA_DIR, "total_single_data.xlsx")
+OUTPUT_CSV  = os.path.join(DATA_DIR, f"total_single_data{suffix}.csv")
+OUTPUT_JSON = os.path.join(DATA_DIR, f"total_single_data{suffix}.json")
+OUTPUT_XLSX = os.path.join(DATA_DIR, f"total_single_data{suffix}.xlsx")
 CACHE_FILE  = os.path.join(DATA_DIR, "naver_enrich_cache_single.json")
 
 HTTP_HEADERS = {
@@ -190,6 +192,23 @@ def fetch_single_realtime_info(name, region):
     cache_data[cache_key] = result
     return result
 
+KIDS_KEYWORDS = [
+    '뽀로로', '아기상어', '핑크퐁', '티니핑', '캐치티니핑', '콩순이', '시크릿쥬쥬',
+    '캐리와', '헬로카봇', '타요', '브레드이발소', '신비아파트', '어린이뮤지컬', '아동뮤지컬',
+    '어린이', '유아', '키즈카페', '맘스하트', '아이러브맘', '육아종합지원', '어린이집',
+    '영유아', '아동', '베이비', '파워레인저', '도티', '포켓몬', '어린이도서관', '쥬라기랜드',
+    '어린이갤러리', '어린이마술', '어린이박물관', '어린이공연', '어린이체험', '동물의 사육제', '가족/어린이'
+]
+
+def check_is_kids(title="", cat="", target_age="", desc=""):
+    text = f"{title} {cat} {target_age} {desc}"
+    for kw in KIDS_KEYWORDS:
+        if kw in text:
+            if kw == '유아' and '옥유아' in title:
+                continue
+            return True
+    return False
+
 def sanitize_single_tags(tags_str):
     if not tags_str:
         return "single:1.0"
@@ -283,6 +302,10 @@ def enrich_data():
         target_age  = str(row.get('target_age', '성인 (개인 방문 적합)')).strip()
         fee_info    = str(row.get('fee_info', '')).strip()
         orig_tags   = str(row.get('ai_tags', '')).strip()
+
+        # Filter out Kids / Children items from Single dataset
+        if check_is_kids(c_name, category, target_age, str(row.get('description', ''))):
+            continue
 
         # 1) 기존 데이터/캐시 확인 (있으면 즉시 재사용 & API 스킵)
         real_info = fetch_single_realtime_info(c_name, orig_region)

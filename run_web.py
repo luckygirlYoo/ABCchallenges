@@ -167,6 +167,7 @@ BATCH_STEPS_TEMPLATE = [
         "title": "[배치 16] LLM & 설명/태그 보강",
         "script": "scripts/enrich_total_family_data.py",
         "desc": "편의시설 태그 및 설명/추천이유 LLM 보강",
+        "args": ["--batch-mode"],
         "status": "PENDING",
         "message": "대기 중"
     },
@@ -177,15 +178,17 @@ BATCH_STEPS_TEMPLATE = [
         "title": "[배치 17] total_couple_data 데이터 통합",
         "script": "scripts/generate_total_couple_data.py",
         "desc": "KOPIS·팝업·커플명소 + 티켓링크/인터파크/문화행사 6개 소스를 커플 탭용으로 최종 통합",
+        "args": ["--batch-mode"],
         "status": "PENDING",
         "message": "대기 중"
     },
     {
         "id": "step18",
-        "name": "generate_single_data.py",
-        "title": "[배치 18] total_single_data 데이터 통합",
-        "script": "scripts/generate_single_data.py",
-        "desc": "싱글매니아 6대 카테고리로 분류·필터링 후 CSV/JSON 최종 통합 생성",
+        "name": "enrich_total_single_data.py",
+        "title": "[배치 18] total_single_data 데이터 통합 & LLM 보강",
+        "script": "scripts/enrich_total_single_data.py",
+        "desc": "싱글매니아 6대 카테고리로 분류·필터링 후 CSV/JSON/XLSX 최종 통합 생성 및 LLM 보강",
+        "args": ["--batch-mode"],
         "status": "PENDING",
         "message": "대기 중"
     }

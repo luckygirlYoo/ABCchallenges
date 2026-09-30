@@ -23,10 +23,12 @@ except Exception:
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR    = os.path.join(BASE_DIR, "..", "data")
+is_batch_mode = ("--batch-mode" in sys.argv) or os.environ.get("BATCH_MODE") == "1"
+suffix      = "_batch" if is_batch_mode else ""
 INPUT_CSV   = os.path.join(DATA_DIR, "total_family_data.csv")
-OUTPUT_CSV  = os.path.join(DATA_DIR, "total_family_data.csv")
-OUTPUT_JSON = os.path.join(DATA_DIR, "total_family_data.json")
-OUTPUT_XLSX = os.path.join(DATA_DIR, "total_family_data.xlsx")
+OUTPUT_CSV  = os.path.join(DATA_DIR, f"total_family_data{suffix}.csv")
+OUTPUT_JSON = os.path.join(DATA_DIR, f"total_family_data{suffix}.json")
+OUTPUT_XLSX = os.path.join(DATA_DIR, f"total_family_data{suffix}.xlsx")
 CACHE_FILE  = os.path.join(DATA_DIR, "naver_enrich_cache.json")
 BACKUP_CACHE_FILE = os.path.join(DATA_DIR, "naver_enrich_cache_backup.json")
 
