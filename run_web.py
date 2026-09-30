@@ -13,7 +13,7 @@ import json
 import subprocess
 from datetime import datetime
 
-PORT = 8080
+PORT = int(os.environ.get("PORT", 8080))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 is_collecting = False
@@ -289,6 +289,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
 
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.end_headers()
+
     def do_GET(self):
         if self.path.startswith("/api/batch_status") or self.path.startswith("/api/status"):
             self.send_json({
@@ -380,23 +388,30 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
 def open_browser():
-    webbrowser.open(f"http://localhost:{PORT}/web/admin.html")
+    try:
+        webbrowser.open(f"http://localhost:{PORT}/web/admin.html")
+    except Exception:
+        pass
 
 def main():
     print("==================================================")
     print("  AI 기반 주말 맞춤형 여가 추천 서비스 (API 서버 내장)")
     print("==================================================")
+    print(f"서버 바인딩 포트: {PORT}")
     print(f"로컬 웹 서버 주소: http://localhost:{PORT}/web/index.html")
     print(f"관리자 페이지 주소: http://localhost:{PORT}/web/admin.html")
     print(f"배치 상태 API: http://localhost:{PORT}/api/batch_status")
     print("==================================================")
     
-    threading.Timer(1.0, open_browser).start()
+    if os.environ.get("PORT") is None:
+        threading.Timer(1.0, open_browser).start()
     
     with ThreadedHTTPServer(("", PORT), CustomHandler) as httpd:
         try:

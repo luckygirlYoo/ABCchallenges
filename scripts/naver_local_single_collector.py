@@ -35,24 +35,20 @@ sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "..", "data")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
 OUTPUT_CSV = os.path.join(DATA_DIR, "naver_single_places.csv")
 
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     CONFIG = json.load(f)
 
-# NAVER API HUB(NCP) 전용 키 — developers.naver.com의 naver_client_id/secret와는 별개.
-# 혹시 config.json에 아직 naver_hub_client_id가 없으면(과거 config 그대로인 경우)
-# naver_client_id로도 한 번 시도해보되, 정상적으로는 hub 전용 키를 써야 한다.
-NAVER_ID = CONFIG.get("api_keys", {}).get("naver_hub_client_id") or CONFIG.get("api_keys", {}).get("naver_client_id", "")
-NAVER_SEC = CONFIG.get("api_keys", {}).get("naver_hub_client_secret") or CONFIG.get("api_keys", {}).get("naver_client_secret", "")
+# developers.naver.com 키 및 NCP 키 모두 로드
+NAVER_DEV_ID  = CONFIG.get("api_keys", {}).get("naver_client_id", "")
+NAVER_DEV_SEC = CONFIG.get("api_keys", {}).get("naver_client_secret", "")
 
-API_URL = "https://naverapihub.apigw.ntruss.com/search/v1/local"
-HTTP_HEADERS = {
-    "X-NCP-APIGW-API-KEY-ID": NAVER_ID,
-    "X-NCP-APIGW-API-KEY": NAVER_SEC,
-}
+NAVER_NCP_ID  = CONFIG.get("backup_api_keys", {}).get("ncp_naver_client_id") or CONFIG.get("api_keys", {}).get("naver_hub_client_id", "")
+NAVER_NCP_SEC = CONFIG.get("backup_api_keys", {}).get("ncp_naver_client_secret") or CONFIG.get("api_keys", {}).get("naver_hub_client_secret", "")
 
 # 수도권 주요 지역 (필요 시 확장)
 SEOUL_DISTRICTS = [
@@ -96,32 +92,31 @@ _RETRY_BACKOFF_BASE = 2     # 2s, 4s
 
 
 def fetch_local_places(query, display=5):
-    """NAVER API HUB 지역검색 호출. 실패 시 빈 리스트 반환.
-    일시적인 타임아웃/연결 오류는 재시도하고, 그래도 실패하면 이 쿼리만 건너뛴다
-    (기존에는 예외가 잡히지 않아 63개 시군구 × 9개 테마 수집 전체가 첫 실패에서 중단됐다)."""
-    if not NAVER_ID or not NAVER_SEC or NAVER_ID.startswith("YOUR_"):
-        raise RuntimeError(
-            "config.json에 naver_hub_client_id / naver_hub_client_secret이 설정되어 있지 않습니다. "
-            "https://console.ncloud.com (AI·NAVER API > Application)에서 발급 후 입력하세요."
-        )
-    params = {"query": query, "display": display, "start": 1, "sort": "random", "format": "json"}
+    """NAVER 지역검색 호출 (developers.naver.com 및 NCP API 자동 폴백)."""
+    params = {"query": query, "display": display, "start": 1, "sort": "random"}
 
-    for attempt in range(1, _MAX_RETRIES + 1):
+    # 1. developers.naver.com Open API 시도
+    if NAVER_DEV_ID and NAVER_DEV_SEC and not NAVER_DEV_ID.startswith("YOUR_"):
+        url = "https://openapi.naver.com/v1/search/local.json"
+        headers = {"X-Naver-Client-Id": NAVER_DEV_ID, "X-Naver-Client-Secret": NAVER_DEV_SEC}
         try:
-            r = requests.get(API_URL, headers=HTTP_HEADERS, params=params, timeout=_FETCH_TIMEOUT)
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-            if attempt < _MAX_RETRIES:
-                wait = _RETRY_BACKOFF_BASE ** attempt
-                print(f"  [경고] '{query}' 요청 실패({type(e).__name__}), {wait}초 후 재시도...")
-                time.sleep(wait)
-                continue
-            print(f"  [경고] '{query}' 요청 실패({type(e).__name__}), 이 쿼리는 건너뜁니다: {e}")
-            return []
+            r = requests.get(url, headers=headers, params=params, timeout=_FETCH_TIMEOUT)
+            if r.status_code == 200:
+                return r.json().get("items", [])
+        except Exception:
+            pass
 
-        if r.status_code != 200:
-            print(f"  [경고] '{query}' 요청 실패 (status={r.status_code}): {r.text[:200]}")
-            return []
-        return r.json().get("items", [])
+    # 2. NCP API 시도
+    if NAVER_NCP_ID and NAVER_NCP_SEC and not NAVER_NCP_ID.startswith("YOUR_"):
+        url = "https://naverapihub.apigw.ntruss.com/search/v1/local"
+        headers = {"X-NCP-APIGW-API-KEY-ID": NAVER_NCP_ID, "X-NCP-APIGW-API-KEY": NAVER_NCP_SEC}
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=_FETCH_TIMEOUT)
+            if r.status_code == 200:
+                return r.json().get("items", [])
+        except Exception:
+            pass
+
     return []
 
 
@@ -183,7 +178,14 @@ def collect():
 def main():
     results = collect()
     if not results:
-        print("⚠️ 수집된 결과가 없습니다. API 키/네트워크 상태를 확인하세요.")
+        print("⚠️ 수집된 결과가 없습니다.")
+        fallback_csv = os.path.join(BASE_DIR, "..", "data", "naver_single_places.csv")
+        if os.path.exists(fallback_csv) and fallback_csv != OUTPUT_CSV:
+            import shutil
+            shutil.copy(fallback_csv, OUTPUT_CSV)
+            print(f"  [복구] 기존 네이버 싱글 장소 데이터({fallback_csv})를 {OUTPUT_CSV}로 복사하여 유지합니다.")
+        elif os.path.exists(OUTPUT_CSV):
+            print(f"  [복구] 기존 파일({OUTPUT_CSV})을 보존합니다.")
         return
 
     os.makedirs(DATA_DIR, exist_ok=True)

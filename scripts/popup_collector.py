@@ -65,7 +65,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "..", "data")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
 OUTPUT_CSV = os.path.join(DATA_DIR, "popup_couple_events_raw.csv")
 CACHE_FILE = os.path.join(DATA_DIR, "popup_collect_cache.json")
 
@@ -237,8 +238,9 @@ def polite_get(url, **kwargs):
     last_exc = None
     for attempt in range(1, SETTINGS["max_retry"] + 1):
         try:
-            time.sleep(SETTINGS["request_interval_sec"] + random.uniform(0, 0.15))
-            resp = requests.get(url, headers=HTTP_HEADERS, timeout=15, **kwargs)
+            time.sleep(SETTINGS["request_interval_sec"] + random.uniform(0.1, 0.3))
+            verify_ssl = False if attempt >= 2 else True
+            resp = requests.get(url, headers=HTTP_HEADERS, timeout=15, verify=verify_ssl, **kwargs)
             if resp.status_code == 200:
                 return resp
             if resp.status_code in (429, 503):
@@ -246,7 +248,6 @@ def polite_get(url, **kwargs):
                 print(f"  ⚠️  {resp.status_code} 응답 — {wait:.1f}초 대기 후 재시도 ({attempt}/{SETTINGS['max_retry']})")
                 time.sleep(wait)
                 continue
-            # 403/404 등은 재시도해도 의미 없는 경우가 많으므로 바로 반환
             return resp
         except requests.RequestException as e:
             last_exc = e
@@ -254,7 +255,7 @@ def polite_get(url, **kwargs):
             print(f"  ⚠️  요청 실패({e}) — {wait:.1f}초 대기 후 재시도 ({attempt}/{SETTINGS['max_retry']})")
             time.sleep(wait)
     if last_exc:
-        raise last_exc
+        print(f"  ❌ 최다 재시도 후에도 연결 실패 ({url}): {last_exc}")
     return None
 
 

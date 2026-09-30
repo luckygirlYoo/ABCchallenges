@@ -686,7 +686,9 @@ def apply_naver_trend(events: list, max_keywords=TREND_MAX_KEYWORDS):
 # ─────────────────────────────────────────────────────
 # 7. 수집 결과 → CSV 저장
 # ─────────────────────────────────────────────────────
-CULTURE_EVENTS_CSV = os.path.join(BASE_DIR, "..", "data", "culture_events_raw.csv")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+CULTURE_EVENTS_CSV = os.path.join(DATA_DIR, "culture_events_raw.csv")
 CULTURE_HEADERS = ["title", "place", "start", "end", "genre", "realm", "url",
                    "thumbnail", "source", "period_raw", "trend_ratio", "popularity",
                    "crawled_at"]

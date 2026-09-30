@@ -3,9 +3,10 @@
     "tour_api_key": "78f617c9eccf3c1adeef525664ac0cd48b8fc2ffb5187b814ab392143edc17fe",
     "seoul_api_key": "4e44517057696e6b36346c59515854",
     "tmap_api_key": "YOUR_TMAP_API_KEY",
-    "kakao_api_key": "dc102c64cf5df7101a59da00926b3625",
+    "kakao_api_key": "3956b68326f3328837c8ccf58a9c6d03",
     "naver_client_id": "Ify0igsEvJBkNQ52tzHU",
     "naver_client_secret": "mrpAOaBHpB",
+    "kcisa_bookstore_api_key": "137fed2c-a641-4e52-a3fa-d89e95a85f65",
     "weather_api_key": "78f617c9eccf3c1adeef525664ac0cd48b8fc2ffb5187b814ab392143edc17fe"
   },
   "backup_api_keys": {
@@ -13,7 +14,7 @@
     "ncp_naver_client_secret": "mXDiNUqwNs8Mv4EYXO84rDn8hKtlgqxW2U4cDskr"
   },
   "settings": {
-    "data_dir": "../data",
+    "data_dir": "../data2",
     "congestion_update_interval_min": 30,
     "event_update_interval_hr": 6,
     "weather_update_interval_hr": 1
@@ -24,6 +25,7 @@
     "weather_api": "https://www.data.go.kr '기상청 단기예보조회서비스' 검색 → 활용신청 (무료)",
     "naver_api": "https://developers.naver.com 애플리케이션 등록 → Client ID/Secret 발급 (무료)",
     "tmap_api": "https://openapi.sk.com 회원가입 → 앱키 발급 (무료 기본 제공)",
-    "kakao_api": "https://developers.kakao.com 앱 등록 → REST API 키 발급 (무료)"
+    "kakao_api": "https://developers.kakao.com 앱 등록 → REST API 키 발급 (무료)",
+    "kcisa_bookstore_api": "https://www.culture.go.kr/data (문화공공데이터광장) → '전국 독립서점 및 운영정보' 활용신청 → 엔드포인트: https://api.kcisa.kr/openapi/API_CIA_089/request"
   }
 }

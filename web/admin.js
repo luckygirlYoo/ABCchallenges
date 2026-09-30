@@ -3,6 +3,16 @@
    통합 배치 파이프라인 (18단계) & 다중 데이터셋 (가족/커플/싱글) 지원
    ══════════════════════════════════════════════════════════════ */
 
+const DEFAULT_BACKEND = 'https://abcchallenges-backend.onrender.com';
+function getBackendUrl() {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.includes('onrender.com')) {
+    return '';
+  }
+  const custom = localStorage.getItem('custom_backend_url');
+  return (custom && custom.trim()) ? custom.trim().replace(/\/+$/, '') : DEFAULT_BACKEND;
+}
+
 let currentDataset = 'family'; // 'family' | 'couple' | 'single'
 let allData        = [];
 let filteredData   = [];
@@ -209,9 +219,19 @@ function renderCategorySwitcher() {
 
 // ── 18단계 배치 상태 렌더링 ─────────────────────────────
 async function checkBatchStatus() {
+  const dotEl = document.getElementById('backend-status-dot');
+  const textEl = document.getElementById('backend-status-text');
+  const urlDisplayEl = document.getElementById('backend-url-display');
+  const backendUrl = getBackendUrl();
+  if (urlDisplayEl) {
+    urlDisplayEl.textContent = backendUrl || '(로컬 서버 direct)';
+  }
+
   try {
-    const res = await fetch('/api/batch_status');
+    const res = await fetch(`${backendUrl}/api/batch_status`);
     const data = await res.json();
+    if (dotEl) dotEl.style.background = '#10B981';
+    if (textEl) textEl.textContent = '(정상 연결됨 - Render 24시간 가동 백엔드)';
     if (data.batch_state) {
       renderBatchState(data.batch_state);
       if (data.batch_state.is_running && !pollInterval) {
@@ -220,6 +240,8 @@ async function checkBatchStatus() {
     }
   } catch (err) {
     console.error('배치 상태 조회 실패:', err);
+    if (dotEl) dotEl.style.background = '#EF4444';
+    if (textEl) textEl.textContent = '(백엔드 연결 실패 - 서버를 확인하세요)';
   }
 }
 
@@ -323,7 +345,7 @@ function renderBatchState(bState) {
 
 window.runSingleStep = async function(stepId) {
   try {
-    const res = await fetch(`/api/run_step?step_id=${stepId}`, { method: 'POST' });
+    const res = await fetch(`${getBackendUrl()}/api/run_step?step_id=${stepId}`, { method: 'POST' });
     const data = await res.json();
     if (data.success) {
       startBatchPolling();
@@ -331,13 +353,13 @@ window.runSingleStep = async function(stepId) {
       alert(`❌ ${data.message || '단일 단계 실행 실패'}`);
     }
   } catch (err) {
-    alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+    alert('❌ 서버 연결 실패. 백엔드 서버(run_web.py)가 실행 중인지 확인하세요.');
   }
 };
 
 window.runFromStep = async function(stepId) {
   try {
-    const res = await fetch(`/api/refresh?start_step=${stepId}`, { method: 'POST' });
+    const res = await fetch(`${getBackendUrl()}/api/refresh?start_step=${stepId}`, { method: 'POST' });
     const data = await res.json();
     if (data.success) {
       startBatchPolling();
@@ -345,7 +367,7 @@ window.runFromStep = async function(stepId) {
       alert(`❌ ${data.message || '단계별 재실행 실패'}`);
     }
   } catch (err) {
-    alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+    alert('❌ 서버 연결 실패. 백엔드 서버(run_web.py)가 실행 중인지 확인하세요.');
   }
 };
 
@@ -353,7 +375,7 @@ function startBatchPolling() {
   if (pollInterval) clearInterval(pollInterval);
   pollInterval = setInterval(async () => {
     try {
-      const res = await fetch('/api/batch_status');
+      const res = await fetch(`${getBackendUrl()}/api/batch_status`);
       const data = await res.json();
       const bState = data.batch_state;
       if (bState) {
@@ -636,7 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 수집 실행 (18단계 전체 배치 파이프라인 시작)
   document.getElementById('admin-run-collect-btn')?.addEventListener('click', async () => {
     try {
-      const res = await fetch('/api/refresh', { method: 'POST' });
+      const res = await fetch(`${getBackendUrl()}/api/refresh`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         startBatchPolling();
@@ -644,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(`❌ ${data.message || '수집 실행 오류'}`);
       }
     } catch (err) {
-      alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+      alert('❌ 서버 연결 실패. 백엔드 서버가 실행 중인지 확인하세요.');
     }
   });
 
@@ -654,7 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 중지 요청 중...';
     try {
-      const res = await fetch('/api/stop', { method: 'POST' });
+      const res = await fetch(`${getBackendUrl()}/api/stop`, { method: 'POST' });
       const data = await res.json();
       // 현재 단계 완료 후 멈추므로 짧간 대기
     } catch (err) {
@@ -668,7 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 오류 단계부터 재시작
   document.getElementById('admin-resume-batch-btn')?.addEventListener('click', async () => {
     try {
-      const res = await fetch('/api/refresh?mode=resume', { method: 'POST' });
+      const res = await fetch(`${getBackendUrl()}/api/refresh?mode=resume`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         startBatchPolling();
@@ -676,7 +698,7 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(`❌ ${data.message || '재시작 오류'}`);
       }
     } catch (err) {
-      alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+      alert('❌ 서버 연결 실패. 백엔드 서버가 실행 중인지 확인하세요.');
     }
   });
 
@@ -686,7 +708,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 날씨 갱신 중...';
     try {
-      const res = await fetch('/api/weather', { method: 'POST' });
+      const res = await fetch(`${getBackendUrl()}/api/weather`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         alert(`✅ ${data.message}`);
@@ -694,7 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(`❌ ${data.message || '날씨 갱신 오류'}`);
       }
     } catch (err) {
-      alert('❌ 서버 연결 실패. run_web.py가 실행 중인지 확인하세요.');
+      alert('❌ 서버 연결 실패. 백엔드 서버가 실행 중인지 확인하세요.');
     } finally {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-cloud-sun"></i> 날씨 갱신';

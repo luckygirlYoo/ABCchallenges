@@ -81,7 +81,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "..", "data")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
 OUTPUT_CSV = os.path.join(DATA_DIR, "visitkorea_couple_spots_raw.csv")
 CACHE_FILE = os.path.join(DATA_DIR, "visitkorea_couple_collect_cache.json")
 

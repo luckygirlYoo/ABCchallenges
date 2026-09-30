@@ -90,7 +90,8 @@ if hasattr(sys.stdout, "detach"):
     sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding="utf-8", line_buffering=True)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "..", "data")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
 OUTPUT_CSV = os.path.join(DATA_DIR, "kopis_performances_raw.csv")
 CACHE_FILE = os.path.join(DATA_DIR, "kopis_collect_cache.json")
 VENUE_CACHE_FILE = os.path.join(DATA_DIR, "kopis_venue_cache.json")
@@ -679,14 +680,15 @@ def collect(full: bool = False):
     if not API_KEY:
         print("=" * 75)
         print("❌ KOPIS 서비스키가 없습니다.")
-        print("   아래 둘 중 하나로 넣어주세요 (환경변수가 우선합니다):")
-        print()
-        print("   1) 환경변수 (권장)")
-        print("      Windows PowerShell : $env:KOPIS_API_KEY=\"발급받은키\"")
-        print("      macOS / Linux      : export KOPIS_API_KEY=\"발급받은키\"")
-        print()
-        print("   2) scripts/config.json")
-        print('      { "api_keys": { "kopis_api_key": "발급받은키" } }')
+        fallback_csv = os.path.join(BASE_DIR, "..", "data", "kopis_performances_raw.csv")
+        if os.path.exists(fallback_csv) and fallback_csv != OUTPUT_CSV:
+            import shutil
+            shutil.copy(fallback_csv, OUTPUT_CSV)
+            print(f"  [복구] 기존 KOPIS 데이터({fallback_csv})를 {OUTPUT_CSV}로 복사하여 유지합니다.")
+        elif os.path.exists(OUTPUT_CSV):
+            print(f"  [복구] 기존 파일({OUTPUT_CSV})을 보존합니다.")
+        else:
+            print("   scripts/config.json 에 kopis_api_key 를 설정하거나 환경변수를 지정해주세요.")
         print("=" * 75)
         return
 

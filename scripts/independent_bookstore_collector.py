@@ -260,6 +260,13 @@ def main():
     rows = collect(max_pages=args.max_pages)
     if not rows:
         print("⚠️ 수집된 결과가 없습니다.")
+        fallback_csv = os.path.join(BASE_DIR, "..", "data", "independent_bookstores.csv")
+        if os.path.exists(fallback_csv) and fallback_csv != OUTPUT_CSV:
+            import shutil
+            shutil.copy(fallback_csv, OUTPUT_CSV)
+            print(f"  [복구] 기존 독립서점 데이터({fallback_csv})를 {OUTPUT_CSV}로 복사하여 유지합니다.")
+        elif os.path.exists(OUTPUT_CSV):
+            print(f"  [복구] 기존 파일({OUTPUT_CSV})을 보존합니다.")
         return
 
     os.makedirs(DATA_DIR, exist_ok=True)

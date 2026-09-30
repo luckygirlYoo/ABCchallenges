@@ -38,6 +38,12 @@
             18단계 통합 수집 & 보강 배치 파이프라인
           </h2>
           <p class="batch-subtitle">수집 실행 시 18개의 배치가 순차 실행되어 가족, 커플, 싱글 데이터가 모두 자동 수집 및 생성됩니다.</p>
+          <div class="backend-server-info" style="margin-top:10px; font-size:12px; color:#94A3B8; display:flex; align-items:center; gap:8px; background:rgba(15,23,42,0.6); padding:6px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+            <span id="backend-status-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#F59E0B;"></span>
+            <span>24시간 백엔드 API:</span>
+            <strong id="backend-url-display" style="color:#60A5FA;">https://abcchallenges-backend.onrender.com</strong>
+            <span id="backend-status-text" style="color:#94A3B8;">(연결 상태 확인 중...)</span>
+          </div>
         </div>
         <div class="batch-btn-group">
           <button class="action-btn refresh primary" id="admin-run-collect-btn">
@@ -152,6 +158,6 @@
     </div>
 
   </div>
-  <script src="admin.js?v=3.0"></script>
+  <script src="admin.js?v=4.0"></script>
 </body>
 </html>

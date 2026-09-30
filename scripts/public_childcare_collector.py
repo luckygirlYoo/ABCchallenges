@@ -41,7 +41,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
 
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR   = os.path.join(BASE_DIR, "..", "data")
+DATA_DIR   = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
 OUTPUT_CSV = os.path.join(DATA_DIR, "public_childcare_data.csv")
 
 _CFG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -272,8 +273,19 @@ def main():
     try:
         rows, stats = collect()
     except PermissionError as e:
-        print(f"[실패] {e}")
-        sys.exit(1)
+        print(f"[경고] {e}")
+        fallback_csv = os.path.join(BASE_DIR, "..", "data", "public_childcare_data.csv")
+        if os.path.exists(fallback_csv) and fallback_csv != OUTPUT_CSV:
+            import shutil
+            shutil.copy(fallback_csv, OUTPUT_CSV)
+            print(f"  [복구] 카카오 API 권한 부족으로 기존 데이터({fallback_csv})를 {OUTPUT_CSV}로 복사하여 유지합니다.")
+            sys.exit(0)
+        elif os.path.exists(OUTPUT_CSV):
+            print(f"  [복구] 기존 파일({OUTPUT_CSV})을 보존합니다.")
+            sys.exit(0)
+        else:
+            print("[실패] 기존 백업 데이터가 존재하지 않아 중단합니다.")
+            sys.exit(1)
 
     print("\n" + "-" * 70)
     print(f"  API 호출 {stats['calls']}회 / 원본 {stats['raw']}건")

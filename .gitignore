@@ -11,5 +11,11 @@ scripts/config.json
 .env
 *.env
 
-# 임시 파일
-*.tmp
+# 데이터 디렉토리 (CSV, JSON, XLSX 등 데이터 결과물)
+data/
+data2/
+*.csv
+*.xlsx
+
+# 비밀정보 — 절대 커밋하지 말 것
+scripts/config.json

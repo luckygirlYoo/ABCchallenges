@@ -30,8 +30,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
 
-EXCEL_PATH = os.path.join(BASE_DIR, "..", "data", "live_interpark_tickets.xlsx")
-CSV_PATH   = os.path.join(BASE_DIR, "..", "data", "live_interpark_tickets.csv")
+DATA_DIR   = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+EXCEL_PATH = os.path.join(DATA_DIR, "live_interpark_tickets.xlsx")
+CSV_PATH   = os.path.join(DATA_DIR, "live_interpark_tickets.csv")
 
 HEADERS = [
     "category", "goods_code", "title", "venue", "start_date", "end_date",
